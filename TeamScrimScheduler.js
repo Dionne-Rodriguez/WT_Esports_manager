@@ -2,6 +2,13 @@ import { Client, Events, GatewayIntentBits, EmbedBuilder } from "discord.js";
 import moment from "moment";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import express from "express";
+
+const app = express();
+
+app.get("/", (req, res) => res.send("Hello World! 🌍"));
+
+app.listen(3000, () => console.log("server started"));
 
 dotenv.config();
 
