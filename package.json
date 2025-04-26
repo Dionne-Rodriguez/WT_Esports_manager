@@ -1,0 +1,26 @@
+{
+  "name": "wt_esports_manager",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "scrimScheduler": "node ./TeamScrimScheduler.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dionne-Rodriguez/WT_Esports_manager.git"
+  },
+  "author": "Dionne Rodriguez",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Dionne-Rodriguez/WT_Esports_manager/issues"
+  },
+  "homepage": "https://github.com/Dionne-Rodriguez/WT_Esports_manager#readme",
+  "dependencies": {
+    "discord.js": "^14.19.1",
+    "dotenv": "^16.5.0",
+    "moment": "^2.30.1",
+    "node-cron": "^3.0.3"
+  }
+}
