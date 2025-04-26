@@ -2,7 +2,7 @@
   "name": "wt_esports_manager",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "TeamScrimScheduler.js",
   "type": "module",
   "scripts": {
     "scrimScheduler": "node ./TeamScrimScheduler.js"
