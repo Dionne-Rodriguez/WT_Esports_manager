@@ -4,13 +4,11 @@ import dotenv from "dotenv";
 import cron from "node-cron";
 import express from "express";
 
-const app = express();
-
-app.get("/", (req, res) => res.send("Hello World! 🌍"));
-
-app.listen(3000, () => console.log("server started"));
-
 dotenv.config();
+
+const app = express();
+app.get("/", (req, res) => res.send("Hello World! 🌍"));
+app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
 const testing = false;
 
@@ -24,65 +22,63 @@ const client = new Client({
   ],
 });
 
-// ✨ Global error handler
 client.on("error", (error) => {
-  console.error("🚨 Client Error Event:", error);
+  console.error("🚨 Client Error:", error);
 });
 
 const token = process.env.TOKEN;
-const channelId = process.env.CHANNELID;
+const channelId = testing ? process.env.TEST_CHANNELID : process.env.CHANNELID;
 const voiceChannelId = process.env.VOICECHANNELID;
 
-let scrimPostWeek = null; // 🆕 Track ISO week of scrim post
-let messageId = null; // Save scrim check message ID
-let eventCreated = {}; // Track if event already created for a day
+let scrimPostWeek = null;
+let messageId = null;
+let eventCreated = {};
+let createdEventIds = {};
+let scheduledReminders = {};
 
 const numberEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday"];
 
-client.once(Events.ClientReady, async (c) => {
-  console.log(`✅ Ready! Logged in as ${c.user.tag}`);
+client.once(Events.ClientReady, async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
 
-  scrimPostWeek = moment.utc().isoWeek(); // 🆕 Set current week on boot
-
+  scrimPostWeek = moment.utc().isoWeek();
   const currentWeek = moment.utc().isoWeek();
 
   if (scrimPostWeek !== currentWeek) {
-    console.log("🛡 Missed scrim post for this week. Posting now...");
+    console.log("🛡 Missed post this week — posting now...");
     await postNewScrimInterest();
-  } else {
-    console.log("✅ Scrim post already made for this week.");
   }
 
-  // ⏰ Schedule to run every Sunday at 12:00 UTC
-  cron.schedule(testing ? "*/30 * * * * *" : "0 12 * * 0", async () => {
-    console.log(`⏰ Scheduled task triggered!`);
+  if (testing) {
+    console.log("Testing mode: posting scrim interest check once.");
     await postNewScrimInterest();
-  });
+  } else {
+    cron.schedule("0 12 * * 6", async () => {
+      console.log("⏰ Scheduled task triggered.");
+      await postNewScrimInterest();
+    });
+  }
 });
 
 async function postNewScrimInterest() {
   try {
     const channel = await client.channels.fetch(channelId);
-
     if (!channel || !channel.isTextBased()) {
-      console.error("❌ Channel not found or not text-based!");
+      console.error("❌ Invalid or non-text channel.");
       return;
     }
 
-    // Reset globals
     for (const emoji of numberEmojis) {
       eventCreated[emoji] = false;
+      createdEventIds[emoji] = null;
+      scheduledReminders[emoji] = null;
     }
     messageId = null;
 
-    const today = moment.utc();
-    scrimPostWeek = today.isoWeek(); // Update week after posting
-
-    const timestamp18UTC = today
-      .clone()
-      .set({ hour: 18, minute: 0, second: 0, millisecond: 0 })
-      .unix();
+    const now = moment.utc();
+    scrimPostWeek = now.isoWeek();
+    const timestamp18UTC = now.clone().set({ hour: 18, minute: 0 }).unix();
 
     const embed = new EmbedBuilder()
       .setTitle("In-house Scrims Interest Check 📝")
@@ -99,109 +95,200 @@ async function postNewScrimInterest() {
     for (const emoji of numberEmojis) {
       await message.react(emoji);
     }
-
-    console.log("✅ New scrim check posted!");
   } catch (error) {
-    console.error("❌ Failed to post new scrim check:", error);
+    console.error("Failed to post scrim check:", error);
   }
 }
 
 client.on("messageReactionAdd", async (reaction, user) => {
   if (user.bot) return;
-  if (!reaction.message.guild) return;
-  if (reaction.message.id !== messageId) return;
+  if (!reaction.message.guild || reaction.message.id !== messageId) return;
   if (!numberEmojis.includes(reaction.emoji.name)) return;
 
   try {
     const fetchedReaction = await reaction.message.reactions.cache
       .get(reaction.emoji.name)
       ?.fetch();
-    const count = fetchedReaction?.count || 0;
 
-    console.log(`🔎 Reaction ${reaction.emoji.name} now has ${count} reacts`);
+    const users = await fetchedReaction.users.fetch();
+    const nonBotUsers = Array.from(users.values()).filter((u) => !u.bot);
+    const count = nonBotUsers.length;
 
-    const emojiIndex = numberEmojis.indexOf(reaction.emoji.name);
-    const reactionTeamMax = testing ? 2 : 9;
+    console.log(`🔎 ${reaction.emoji.name} has ${count} non-bot reactions.`);
 
-    if (count >= reactionTeamMax && !eventCreated[reaction.emoji.name]) {
-      eventCreated[reaction.emoji.name] = true;
+    const emoji = reaction.emoji.name;
+    const emojiIndex = numberEmojis.indexOf(emoji);
+    const reactionThreshold = testing ? 3 : 8;
+
+    if (count >= reactionThreshold && !eventCreated[emoji]) {
+      eventCreated[emoji] = true;
 
       const dayName = dayNames[emojiIndex];
-      console.log(
-        `🎉 ${reactionTeamMax} or more people for ${dayName}, creating event!`
+      const guild = reaction.message.guild;
+      const channel = await client.channels.fetch(channelId);
+
+      const memberFetches = await Promise.all(
+        nonBotUsers.map(async (u) => {
+          try {
+            const member = await guild.members.fetch(u.id);
+            return { user: u, member };
+          } catch {
+            return null;
+          }
+        })
       );
 
-      const guild = reaction.message.guild;
+      const TEAM_IDS = {
+        "A-Team": "1234123978692628551",
+        "B-Team": "1290618045747695708",
+        "C-Team": "1290617974855827497",
+      };
 
-      const today = moment.utc();
-      const todayDayIndex = today.isoWeekday(); // Monday = 1, Sunday = 7
-      let targetDayIndex = emojiIndex + 1; // 1️⃣ Monday = 1
-      let daysToAdd = targetDayIndex - todayDayIndex;
-      if (daysToAdd < 0) daysToAdd += 7; // If already passed, schedule for next week
+      const MAIN_SUFFIX = "-Main";
+      const teams = { "A-Team": [], "B-Team": [], "C-Team": [], Mixed: [] };
 
-      const eventMoment = today
-        .clone()
-        .add(daysToAdd, "days")
-        .set({ hour: 18, minute: 0, second: 0, millisecond: 0 });
+      for (const entry of memberFetches) {
+        if (!entry) continue;
+        const { user, member } = entry;
+        const roleNames = member.roles.cache.map((r) => r.name);
 
-      // Create the voice channel event
-      await guild.scheduledEvents.create({
-        name: `4v4 Jetstrike Scrims - ${dayName}`,
-        scheduledStartTime: eventMoment.toDate(),
-        privacyLevel: 2, // GUILD_ONLY
-        entityType: 2, // Voice event
-        channel: voiceChannelId,
-        description: `Weekly in-house scrims happening on ${dayName} at **18:00 UTC**!\n\n🕐 **Duration:** Approx 1 Hour\n🎯 **Requirements:** 8 players minimum\n`,
-      });
+        const main = roleNames.find((r) => r.endsWith(MAIN_SUFFIX));
+        if (main) {
+          const baseTeam = main.replace(MAIN_SUFFIX, "");
+          if (teams[baseTeam]) {
+            teams[baseTeam].push(user);
+            continue;
+          }
+        }
 
-      console.log(`✅ Event created for ${dayName}!`);
+        const found = Object.keys(TEAM_IDS).find((t) => roleNames.includes(t));
+        if (found) {
+          teams[found].push(user);
+        } else {
+          teams.Mixed.push(user);
+        }
+      }
+      const eligibleTeams = Object.entries(teams).filter(
+        ([team, users]) => team !== "Mixed" && users.length >= 4
+      );
 
-      // Set up reminder
-      const reminderMoment = eventMoment.clone().subtract(15, "minutes");
-      const timeUntilReminder = reminderMoment.diff(moment.utc());
+      let team1 = null;
+      let team2 = null;
 
-      if (timeUntilReminder > 0) {
-        console.log(
-          `⏰ Scheduling reminder for ${dayName} scrim in ${Math.floor(
-            timeUntilReminder / 1000 / 60
-          )} minutes.`
+      if (eligibleTeams.length >= 2) {
+        [team1, team2] = eligibleTeams.slice(0, 2);
+      } else if (
+        eligibleTeams.length === 1 && nonBotUsers.length >= testing ? 3 : 8
+      ) {
+        team1 = eligibleTeams[0];
+        const mixedPool = nonBotUsers.filter(
+          (u) => !team1[1].some((m) => m.id === u.id)
+        );
+        team2 = ["Mixed", mixedPool];
+      }
+
+      if (team1 && team2 && team1[1].length >= 4 && team2[1].length >= 4) {
+        const name1 = team1[0];
+        const name2 = team2[0];
+        const mentions1 = team1[1].map((u) => `<@${u.id}>`).join(", ");
+        const mentions2 = team2[1].map((u) => `<@${u.id}>`).join(", ");
+
+        const today = moment.utc();
+        const targetDay = emojiIndex + 1;
+        const currentDay = today.isoWeekday();
+        let daysToAdd = targetDay - currentDay;
+        if (daysToAdd < 0) daysToAdd += 7;
+        const eventMoment = today
+          .clone()
+          .add(daysToAdd, "days")
+          .set({ hour: 18, minute: 0 });
+
+        const createdEvent = await guild.scheduledEvents.create({
+          name: `4v4 Jetstrike Scrims - ${dayName}`,
+          scheduledStartTime: eventMoment.toDate(),
+          privacyLevel: 2,
+          entityType: 2,
+          channel: voiceChannelId,
+          description: `Weekly in-house scrims happening on ${dayName} at **18:00 UTC**!\n\n🕐 **Duration:** 1 Hour\n🎯 **Min players:** ${reactionThreshold}`,
+        });
+
+        createdEventIds[emoji] = createdEvent.id;
+
+        await channel.send(
+          `✅ **Scrim confirmed for ${dayName} at 18:00 UTC!**\n\n` +
+            `🟥 **Team 1 (${name1})**:\n${mentions1}\n\n` +
+            `🟦 **Team 2 (${name2})**:\n${mentions2}`
         );
 
-        setTimeout(async () => {
-          try {
-            const channel = await client.channels.fetch(channelId);
-            const scrimMessage = await channel.messages.fetch(messageId);
-            const reaction = scrimMessage.reactions.cache.get(
-              numberEmojis[emojiIndex]
-            );
-            if (!reaction) {
-              console.log(`⚠️ No reaction found for ${reaction.emoji.name}`);
-              return;
-            }
+        const reminderMoment = eventMoment.clone().subtract(30, "minutes");
+        const timeUntilReminder = reminderMoment.diff(moment.utc());
 
-            const users = await reaction.users.fetch();
-            const nonBotUsers = users.filter((u) => !u.bot);
-
-            if (nonBotUsers.size === 0) {
-              console.log(`⚠️ No real users reacted for ${dayName}.`);
-              return;
-            }
-
-            const mentions = nonBotUsers.map((u) => `<@${u.id}>`).join(" ");
+        if (timeUntilReminder > 0) {
+          scheduledReminders[emoji] = setTimeout(async () => {
+            const updatedReaction = await reaction.message.reactions.cache
+              .get(emoji)
+              ?.fetch();
+            const users = await updatedReaction.users.fetch();
+            const validUsers = Array.from(users.values()).filter((u) => !u.bot);
+            const mentions = validUsers.map((u) => `<@${u.id}>`).join(", ");
 
             await channel.send(
-              `⏰ **Reminder!** In-house scrims for **${dayName}** start in 15 minutes!\n${mentions}`
+              `⏰ **Reminder!** Scrim for **${dayName}** starts in 30 minutes!\n${mentions}`
             );
-
-            console.log(`✅ Reminder sent for ${dayName}!`);
-          } catch (error) {
-            console.error("❌ Failed to send reminder:", error);
-          }
-        }, timeUntilReminder);
+          }, timeUntilReminder);
+        }
+      } else {
+        console.log("❌ Not enough for 2 valid teams yet.");
       }
     }
   } catch (error) {
-    console.error("❌ Failed to handle reaction or create event:", error);
+    console.error("❌ Failed on reaction add:", error);
+  }
+});
+
+client.on("messageReactionRemove", async (reaction, user) => {
+  if (user.bot) return;
+  if (!reaction.message.guild || reaction.message.id !== messageId) return;
+  if (!numberEmojis.includes(reaction.emoji.name)) return;
+
+  try {
+    const fetchedReaction = await reaction.message.reactions.cache
+      .get(reaction.emoji.name)
+      ?.fetch();
+    const users = await fetchedReaction.users.fetch();
+    const nonBotUsers = Array.from(users.values()).filter((u) => !u.bot);
+    const count = nonBotUsers.length;
+
+    const emoji = reaction.emoji.name;
+    const emojiIndex = numberEmojis.indexOf(emoji);
+    const dayName = dayNames[emojiIndex];
+    const threshold = testing ? 3 : 8;
+
+    if (count < threshold && eventCreated[emoji]) {
+      const guild = reaction.message.guild;
+      const channel = await client.channels.fetch(channelId);
+
+      if (createdEventIds[emoji]) {
+        await guild.scheduledEvents.delete(createdEventIds[emoji]);
+        createdEventIds[emoji] = null;
+        eventCreated[emoji] = false;
+
+        if (scheduledReminders[emoji]) {
+          clearTimeout(scheduledReminders[emoji]);
+          scheduledReminders[emoji] = null;
+        }
+
+        await channel.send(
+          `❌ **Scrim for ${dayName} canceled. Not enough players.**
+` +
+            `${
+              threshold - count
+            } player(s) required to recreate event. If interested, react to original post.`
+        );
+      }
+    }
+  } catch (error) {
+    console.error("❌ Failed on reaction removal:", error);
   }
 });
 
