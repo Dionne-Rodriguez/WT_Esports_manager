@@ -20,6 +20,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildScheduledEvents,
   ],
+  partials: ["MESSAGE", "CHANNEL", "REACTION", "USER", "GUILD_MEMBER"],
 });
 
 client.on("error", (error) => {
@@ -54,9 +55,14 @@ client.once(Events.ClientReady, async () => {
     console.log("Testing mode: posting scrim interest check once.");
     await postNewScrimInterest();
   } else {
-    cron.schedule("0 12 * * 6", async () => {
-      console.log("⏰ Scheduled task triggered.");
-      await postNewScrimInterest();
+    let hasPosted = false;
+
+    cron.schedule("* * * * *", async () => {
+      if (!hasPosted) {
+        console.log("⏰ Running scrim post ONCE");
+        await postNewScrimInterest();
+        hasPosted = true;
+      }
     });
   }
 });
@@ -91,6 +97,7 @@ async function postNewScrimInterest() {
 
     const message = await channel.send({ embeds: [embed] });
     messageId = message.id;
+    console.log("🔗 Watching for reactions on message ID:", messageId);
 
     for (const emoji of numberEmojis) {
       await message.react(emoji);
@@ -101,6 +108,9 @@ async function postNewScrimInterest() {
 }
 
 client.on("messageReactionAdd", async (reaction, user) => {
+  console.log(`🧪 Detected a reaction from ${user.tag}`);
+  if (reaction.partial) await reaction.fetch();
+  if (user.partial) await user.fetch();
   if (user.bot) return;
   if (!reaction.message.guild || reaction.message.id !== messageId) return;
   if (!numberEmojis.includes(reaction.emoji.name)) return;
@@ -118,7 +128,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     const emoji = reaction.emoji.name;
     const emojiIndex = numberEmojis.indexOf(emoji);
-    const reactionThreshold = testing ? 3 : 8;
+    const reactionThreshold = testing ? 2 : 8;
 
     if (count >= reactionThreshold && !eventCreated[emoji]) {
       eventCreated[emoji] = true;
