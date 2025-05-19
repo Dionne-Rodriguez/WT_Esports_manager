@@ -264,6 +264,8 @@ client.on("messageReactionAdd", async (reaction, user) => {
 });
 
 client.on("messageReactionRemove", async (reaction, user) => {
+  if (reaction.partial) await reaction.fetch();
+  if (user.partial) await user.fetch();
   if (user.bot) return;
   if (!reaction.message.guild || reaction.message.id !== messageId) return;
   if (!numberEmojis.includes(reaction.emoji.name)) return;
