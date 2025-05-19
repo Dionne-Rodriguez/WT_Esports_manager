@@ -50,14 +50,21 @@ client.once(Events.ClientReady, async () => {
     console.log("🛡 Missed post this week — posting now...");
     await postNewScrimInterest();
   }
+  const existingMessageId = "1373268817823666249";
+  const channel = await client.channels.fetch(channelId);
+  const oldMessage = await channel.messages.fetch(existingMessageId);
+  if (oldMessage) {
+    messageId = oldMessage.id;
+    console.log(`📌 Loaded existing scrim message ID: ${messageId}`);
+  }
 
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
     await postNewScrimInterest();
-  } else {
+  } else if (!oldMessage) {
     let hasPosted = false;
 
-    cron.schedule("* * * * *", async () => {
+    cron.schedule("0 12 * * 6", async () => {
       if (!hasPosted) {
         console.log("⏰ Running scrim post ONCE");
         await postNewScrimInterest();
