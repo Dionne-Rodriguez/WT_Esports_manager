@@ -1,4 +1,12 @@
-import { Client, Events, GatewayIntentBits, EmbedBuilder } from "discord.js";
+import {
+  Client,
+  Events,
+  GatewayIntentBits,
+  EmbedBuilder,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+} from "discord.js";
 import moment from "moment";
 import dotenv from "dotenv";
 import cron from "node-cron";
@@ -10,7 +18,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Hello World! 🌍"));
 app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
-const testing = false;
+const testing = true; // Set to false for production
 
 const client = new Client({
   intents: [
@@ -20,7 +28,6 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildScheduledEvents,
   ],
-  partials: ["MESSAGE", "CHANNEL", "REACTION", "USER", "GUILD_MEMBER"],
 });
 
 client.on("error", (error) => {
@@ -40,6 +47,46 @@ let scheduledReminders = {};
 const numberEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday"];
 
+//set up commands
+const commands = [
+  new SlashCommandBuilder()
+    .setName("user")
+    .setDescription("Register your War Thunder ID")
+    .addIntegerOption((opt) =>
+      opt
+        .setName("id")
+        .setDescription("Your War Thunder numeric user ID")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("session")
+    .setDescription("Start a custom War Thunder lobby")
+    .addStringOption((opt) =>
+      opt
+        .setName("mapurl")
+        .setDescription("Optional map URL or name")
+        .setRequired(false)
+    ),
+].map((cmd) => cmd.toJSON());
+const rest = new REST({ version: "10" }).setToken(token);
+
+(async () => {
+  try {
+    console.log("⏳ Registering slash commands...");
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ), // or Routes.applicationCommands(clientId) for global
+      { body: commands }
+    );
+    console.log("✅ Slash commands registered!");
+  } catch (error) {
+    console.error("❌ Failed to register commands:", error);
+  }
+})();
+
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -50,25 +97,14 @@ client.once(Events.ClientReady, async () => {
     console.log("🛡 Missed post this week — posting now...");
     await postNewScrimInterest();
   }
-  const existingMessageId = "";
-  const channel = await client.channels.fetch(channelId);
-  const oldMessage = await channel.messages.fetch(existingMessageId);
-  const loadExistingMessage = false;
-  if (oldMessage && loadExistingMessage) {
-    messageId = oldMessage.id;
-    console.log(`📌 Loaded existing scrim message ID: ${messageId}`);
-  }
+
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
     await postNewScrimInterest();
-  } else if (!oldMessage && !loadExistingMessage) {
-    let hasPosted = false;
-
+  } else {
     cron.schedule("0 12 * * 6", async () => {
-      if (!hasPosted) {
-        await postNewScrimInterest();
-        hasPosted = true;
-      }
+      console.log("⏰ Scheduled task triggered.");
+      await postNewScrimInterest();
     });
   }
 });
@@ -103,7 +139,6 @@ async function postNewScrimInterest() {
 
     const message = await channel.send({ embeds: [embed] });
     messageId = message.id;
-    console.log("🔗 Watching for reactions on message ID:", messageId);
 
     for (const emoji of numberEmojis) {
       await message.react(emoji);
@@ -113,10 +148,105 @@ async function postNewScrimInterest() {
   }
 }
 
+async function startReadyCheck(channel, players, mapUrl) {
+  const readyMsg = await channel.send(
+    `✅ All players confirmed for a scrim!
+**Ready Check**: React with 👍 when you are online and logged into War Thunder.
+We need all ${players.length} players to react in order for invites to be sent out.`
+  );
+
+  await readyMsg.react("👍");
+
+  const readyCollector = readyMsg.createReactionCollector({
+    filter: (reaction, user) => {
+      return (
+        reaction.emoji.name === "👍" &&
+        !user.bot &&
+        players.some((p) => p.id === user.id)
+      );
+    },
+  });
+
+  const reacted = new Set();
+
+  readyCollector.on("collect", (reaction, user) => {
+    reacted.add(user.id);
+    console.log(`${user.tag} is ready (${reacted.size}/${players.length})`);
+
+    if (reacted.size === players.length) {
+      readyCollector.stop("all-ready");
+    }
+  });
+
+  readyCollector.on("end", async (collected, reason) => {
+    if (reason === "all-ready") {
+      await channel.send(
+        "All players are ready and online. Sending invites and launching lobby..."
+      );
+      await createCustomLobby(
+        mapUrl,
+        new Map(players.map((p) => [p.id, p.warId])),
+        channel
+      );
+    }
+  });
+}
+
+const MIN_PLAYERS = testing ? 2 : 8;
+
+function setupSessionCollector(announceMessage, mapUrl) {
+  const participants = new Map();
+
+  const filter = (reaction, user) => {
+    return !user.bot && reaction.emoji.name === "👍";
+  };
+
+  const collector = announceMessage.createReactionCollector({
+    filter,
+  });
+
+  collector.on("collect", async (reaction, user) => {
+    const member = await announceMessage.guild.members.fetch(user.id);
+    const idRole = member.roles.cache.find((r) => r.name.startsWith("id-"));
+
+    if (!idRole) {
+      try {
+        await reaction.users.remove(user.id);
+      } catch {}
+      await announceMessage.channel.send({
+        content: `${user}, your War Thunder ID role is missing. Please use \`/user id <your_id>\` to register before joining.`,
+      });
+      return;
+    }
+
+    const warId = parseInt(idRole.name.slice(3));
+    participants.set(user.id, warId);
+    console.log(
+      `✅ ${user.tag} joined session (${participants.size}/${MIN_PLAYERS})`
+    );
+
+    if (participants.size >= MIN_PLAYERS) {
+      collector.stop("enough-players");
+    }
+  });
+
+  collector.on("end", async (_collected, reason) => {
+    if (participants.size < MIN_PLAYERS) {
+      await announceMessage.reply(
+        "❌ Not enough players joined the lobby in time."
+      );
+      return;
+    }
+
+    const channel = announceMessage.channel;
+    const playerArray = Array.from(participants.entries()).map(
+      ([id, warId]) => ({ id, warId })
+    );
+    await startReadyCheck(channel, playerArray, mapUrl);
+  });
+}
+
 client.on("messageReactionAdd", async (reaction, user) => {
-  console.log(`🧪 Detected a reaction from ${user.tag}`);
-  if (reaction.partial) await reaction.fetch();
-  if (user.partial) await user.fetch();
   if (user.bot) return;
   if (!reaction.message.guild || reaction.message.id !== messageId) return;
   if (!numberEmojis.includes(reaction.emoji.name)) return;
@@ -134,7 +264,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
     const emoji = reaction.emoji.name;
     const emojiIndex = numberEmojis.indexOf(emoji);
-    const reactionThreshold = testing ? 2 : 8;
+    const reactionThreshold = testing ? 3 : 8;
 
     if (count >= reactionThreshold && !eventCreated[emoji]) {
       eventCreated[emoji] = true;
@@ -184,8 +314,8 @@ client.on("messageReactionAdd", async (reaction, user) => {
           teams.Mixed.push(user);
         }
       }
-      const eligibleTeams = Object.entries(teams).filter(([team, users]) =>
-        team !== "Mixed" && users.length >= testing ? 1 : 4
+      const eligibleTeams = Object.entries(teams).filter(
+        ([team, users]) => team !== "Mixed" && users.length >= 4
       );
 
       let team1 = null;
@@ -194,7 +324,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
       if (eligibleTeams.length >= 2) {
         [team1, team2] = eligibleTeams.slice(0, 2);
       } else if (
-        eligibleTeams.length === 1 && nonBotUsers.length >= testing ? 2 : 8
+        eligibleTeams.length === 1 && nonBotUsers.length >= testing ? 3 : 8
       ) {
         team1 = eligibleTeams[0];
         const mixedPool = nonBotUsers.filter(
@@ -203,13 +333,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
         team2 = ["Mixed", mixedPool];
       }
 
-      if (
-        team1 && team2 && team1[1].length >= testing
-          ? 1
-          : 4 && team2[1].length >= testing
-          ? 1
-          : 4
-      ) {
+      if (team1 && team2 && team1[1].length >= 4 && team2[1].length >= 4) {
         const name1 = team1[0];
         const name2 = team2[0];
         const mentions1 = team1[1].map((u) => `<@${u.id}>`).join(", ");
@@ -242,6 +366,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
             `🟦 **Team 2 (${name2})**:\n${mentions2}`
         );
 
+        const timeUntilStart = eventMoment.diff(moment.utc());
         const reminderMoment = eventMoment.clone().subtract(30, "minutes");
         const timeUntilReminder = reminderMoment.diff(moment.utc());
 
@@ -259,6 +384,29 @@ client.on("messageReactionAdd", async (reaction, user) => {
             );
           }, timeUntilReminder);
         }
+
+        if (timeUntilStart > 0) {
+          setTimeout(async () => {
+            const warThunderPlayers = [];
+
+            for (const user of nonBotUsers) {
+              const member = await guild.members.fetch(user.id);
+              const idRole = member.roles.cache.find((r) =>
+                r.name.startsWith("id-")
+              );
+              if (idRole) {
+                const warId = parseInt(idRole.name.slice(3));
+                warThunderPlayers.push({ id: user.id, warId });
+              }
+            }
+
+            await startReadyCheck(
+              channel,
+              warThunderPlayers,
+              "(default map or TBD)"
+            );
+          }, timeUntilStart);
+        }
       } else {
         console.log("❌ Not enough for 2 valid teams yet.");
       }
@@ -269,9 +417,6 @@ client.on("messageReactionAdd", async (reaction, user) => {
 });
 
 client.on("messageReactionRemove", async (reaction, user) => {
-  console.log(`🧪 Detected an unreaction from ${user.tag}`);
-  if (reaction.partial) await reaction.fetch();
-  if (user.partial) await user.fetch();
   if (user.bot) return;
   if (!reaction.message.guild || reaction.message.id !== messageId) return;
   if (!numberEmojis.includes(reaction.emoji.name)) return;
@@ -287,11 +432,8 @@ client.on("messageReactionRemove", async (reaction, user) => {
     const emoji = reaction.emoji.name;
     const emojiIndex = numberEmojis.indexOf(emoji);
     const dayName = dayNames[emojiIndex];
-    const threshold = testing ? 2 : 8;
+    const threshold = testing ? 3 : 8;
 
-    console.log(
-      `🔎 ${reaction.emoji.name} has ${count} non-bot reactions after removal.`
-    );
     if (count < threshold && eventCreated[emoji]) {
       const guild = reaction.message.guild;
       const channel = await client.channels.fetch(channelId);
@@ -317,6 +459,49 @@ client.on("messageReactionRemove", async (reaction, user) => {
     }
   } catch (error) {
     console.error("❌ Failed on reaction removal:", error);
+  }
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isCommand()) return;
+  if (interaction.commandName === "user") {
+    const warThunderId = interaction.options.getInteger("id");
+    if (!warThunderId) {
+      await interaction.reply({
+        content: "Please provide a valid War Thunder user ID.",
+        ephemeral: true,
+      });
+      return;
+    }
+    const roleName = `id-${warThunderId}`;
+    const guild = interaction.guild;
+    let role = guild.roles.cache.find((r) => r.name === roleName);
+    if (!role) {
+      // Create role if it doesn't exist
+      role = await guild.roles.create({
+        name: roleName,
+        mentionable: false, // ID roles need not be mentionable by everyone
+        reason: `Role for War Thunder ID ${warThunderId}`,
+      });
+    }
+    // Assign role to the user
+    await interaction.member.roles.add(role); // use roles.add to assign:contentReference[oaicite:0]{index=0}
+    await interaction.reply({
+      content: `Your War Thunder ID **${warThunderId}** has been registered!`,
+      ephemeral: true,
+    });
+  }
+  if (interaction.commandName === "session") {
+    const mapUrl = interaction.options.getString("mapurl") || "Default map";
+
+    const announce = await interaction.reply({
+      content: `**Custom War Thunder Lobby Announcement**\nMap: ${mapUrl}\nReact with 👍 to join the lobby! (Need at least 8 players)`,
+      fetchReply: true,
+    });
+
+    await announce.react("👍");
+
+    setupSessionCollector(announce, mapUrl);
   }
 });
 
