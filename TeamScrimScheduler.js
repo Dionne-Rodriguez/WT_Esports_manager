@@ -95,7 +95,6 @@ const rest = new REST({ version: "10" }).setToken(token);
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  scrimPostWeek = moment.utc().isoWeek();
   const currentWeek = moment.utc().isoWeek();
 
   if (scrimPostWeek !== currentWeek) {
@@ -115,6 +114,7 @@ client.once(Events.ClientReady, async () => {
 });
 
 async function postNewScrimInterest() {
+  scrimPostWeek = moment.utc().isoWeek();
   try {
     const channel = await client.channels.fetch(channelId);
     if (!channel || !channel.isTextBased()) {
