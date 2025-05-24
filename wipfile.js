@@ -58,17 +58,22 @@ const commands = [
         .setDescription("Your War Thunder numeric user ID")
         .setRequired(true)
     ),
-
   new SlashCommandBuilder()
     .setName("session")
     .setDescription("Start a custom War Thunder lobby")
+    .addBooleanOption((opt) =>
+      opt
+        .setName("self_select")
+        .setDescription("If false, team-based formation will be applied")
+        .setRequired(true)
+    )
     .addStringOption((opt) =>
       opt
         .setName("mapurl")
-        .setDescription("Optional map URL or name")
+        .setDescription("Optional map URL or a random one will be selected")
         .setRequired(false)
     ),
-].map((cmd) => cmd.toJSON());
+].map((command) => command.toJSON());
 const rest = new REST({ version: "10" }).setToken(token);
 
 (async () => {
@@ -148,7 +153,7 @@ async function postNewScrimInterest() {
   }
 }
 
-async function startReadyCheck(channel, players, mapUrl) {
+async function startReadyCheck(channel, players, mapUrl, selfSelectTeam) {
   const readyMsg = await channel.send(
     `✅ All players confirmed for a scrim!
 **Ready Check**: React with 👍 when you are online and logged into War Thunder.
@@ -194,7 +199,7 @@ We need all ${players.length} players to react in order for invites to be sent o
 
 const MIN_PLAYERS = testing ? 2 : 8;
 
-function setupSessionCollector(announceMessage, mapUrl) {
+function setupSessionCollector(announceMessage, mapUrl, selfSelectTeam) {
   const participants = new Map();
 
   const filter = (reaction, user) => {
@@ -242,7 +247,7 @@ function setupSessionCollector(announceMessage, mapUrl) {
     const playerArray = Array.from(participants.entries()).map(
       ([id, warId]) => ({ id, warId })
     );
-    await startReadyCheck(channel, playerArray, mapUrl);
+    await startReadyCheck(channel, playerArray, mapUrl, selfSelectTeam);
   });
 }
 
@@ -493,15 +498,19 @@ client.on("interactionCreate", async (interaction) => {
   }
   if (interaction.commandName === "session") {
     const mapUrl = interaction.options.getString("mapurl") || "Default map";
+    const selfSelect = interaction.options.getBoolean("self_select"); // true or false
 
+    console.log(
+      `Session command received. Map URL: ${mapUrl}, Self-select: ${selfSelect}`
+    );
     const announce = await interaction.reply({
-      content: `**Custom War Thunder Lobby Announcement**\nMap: ${mapUrl}\nReact with 👍 to join the lobby! (Need at least 8 players)`,
+      content: `**Custom War Thunder Lobby Announcement**\nMap: ${mapUrl}\nPlayers self select team: ${selfSelect}\nReact with 👍 to join the lobby! (Need at least 8 players)`,
       fetchReply: true,
     });
 
     await announce.react("👍");
 
-    setupSessionCollector(announce, mapUrl);
+    setupSessionCollector(announce, mapUrl, selfSelect);
   }
 });
 

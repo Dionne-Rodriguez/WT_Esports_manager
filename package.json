@@ -5,7 +5,8 @@
   "main": "TeamScrimScheduler.js",
   "type": "module",
   "scripts": {
-    "scrimScheduler": "node ./TeamScrimScheduler.js"
+    "scrimScheduler": "node ./TeamScrimScheduler.js",
+    "test": "node ./wipfile.js"
   },
   "repository": {
     "type": "git",

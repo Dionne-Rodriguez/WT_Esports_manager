@@ -40,6 +40,51 @@ let scheduledReminders = {};
 const numberEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday"];
 
+//set up commands
+const commands = [
+  new SlashCommandBuilder()
+    .setName("user")
+    .setDescription("Register your War Thunder ID")
+    .addIntegerOption((opt) =>
+      opt
+        .setName("id")
+        .setDescription("Your War Thunder numeric user ID")
+        .setRequired(true)
+    ),
+  new SlashCommandBuilder()
+    .setName("session")
+    .setDescription("Start a custom War Thunder lobby")
+    .addBooleanOption((opt) =>
+      opt
+        .setName("self_select")
+        .setDescription("If false, team-based formation will be applied")
+        .setRequired(true)
+    )
+    .addStringOption((opt) =>
+      opt
+        .setName("mapurl")
+        .setDescription("Optional map URL or a random one will be selected")
+        .setRequired(false)
+    ),
+].map((command) => command.toJSON());
+const rest = new REST({ version: "10" }).setToken(token);
+
+(async () => {
+  try {
+    console.log("⏳ Registering slash commands...");
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ), // or Routes.applicationCommands(clientId) for global
+      { body: commands }
+    );
+    console.log("✅ Slash commands registered!");
+  } catch (error) {
+    console.error("❌ Failed to register commands:", error);
+  }
+})();
+
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -54,14 +99,14 @@ client.once(Events.ClientReady, async () => {
   const channel = await client.channels.fetch(channelId);
   const oldMessage = await channel.messages.fetch(existingMessageId);
   const loadExistingMessage = false;
-  if (oldMessage && loadExistingMessage) {
+  if (oldMessage && existingMessageId) {
     messageId = oldMessage.id;
     console.log(`📌 Loaded existing scrim message ID: ${messageId}`);
   }
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
     await postNewScrimInterest();
-  } else if (!oldMessage && !loadExistingMessage) {
+  } else if (!loadExistingMessage) {
     let hasPosted = false;
 
     cron.schedule("0 12 * * 6", async () => {
