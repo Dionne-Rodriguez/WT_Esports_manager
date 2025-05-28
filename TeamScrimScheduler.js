@@ -11,6 +11,7 @@ import moment from "moment";
 import dotenv from "dotenv";
 import cron from "node-cron";
 import express from "express";
+import registerRoutes from "./routes.js";
 
 dotenv.config();
 
@@ -18,7 +19,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Hello World! 🌍"));
 app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
-const testing = false; // Set to false for production
+const testing = true; // Set to false for production
 
 const client = new Client({
   intents: [
@@ -38,7 +39,6 @@ const token = process.env.TOKEN;
 const channelId = testing ? process.env.TEST_CHANNELID : process.env.CHANNELID;
 const voiceChannelId = process.env.VOICECHANNELID;
 
-let scrimPostWeek = null;
 let messageId = null;
 let eventCreated = {};
 let createdEventIds = {};
@@ -94,13 +94,7 @@ const rest = new REST({ version: "10" }).setToken(token);
 
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
-  const currentWeek = moment.utc().isoWeek();
-
-  if (scrimPostWeek !== currentWeek) {
-    console.log("🛡 Missed post this week — posting now...");
-    await postNewScrimInterest();
-  }
+  registerRoutes(app, client, postNewScrimInterest);
 
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
@@ -114,7 +108,6 @@ client.once(Events.ClientReady, async () => {
 });
 
 async function postNewScrimInterest() {
-  scrimPostWeek = moment.utc().isoWeek();
   try {
     const channel = await client.channels.fetch(channelId);
     if (!channel || !channel.isTextBased()) {
@@ -130,7 +123,6 @@ async function postNewScrimInterest() {
     messageId = null;
 
     const now = moment.utc();
-    scrimPostWeek = now.isoWeek();
     const timestamp18UTC = now.clone().set({ hour: 18, minute: 0 }).unix();
 
     const embed = new EmbedBuilder()
