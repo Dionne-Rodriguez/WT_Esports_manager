@@ -265,11 +265,11 @@ client.on("messageReactionAdd", async (reaction, user) => {
     const nonBotUsers = Array.from(users.values()).filter((u) => !u.bot);
     const count = nonBotUsers.length;
 
-    console.log(`🔎 ${reaction.emoji.name} has ${count} non-bot reactions.`);
-
     const emoji = reaction.emoji.name;
     const emojiIndex = numberEmojis.indexOf(emoji);
-    const reactionThreshold = testing ? 3 : 8;
+    const reactionThreshold = testing ? 1 : 8;
+
+    console.log(`🔎 ${dayNames[emojiIndex]} has ${count} reaction(s).`);
 
     if (count >= reactionThreshold && !eventCreated[emoji]) {
       eventCreated[emoji] = true;
@@ -319,17 +319,23 @@ client.on("messageReactionAdd", async (reaction, user) => {
           teams.Mixed.push(user);
         }
       }
+
       const eligibleTeams = Object.entries(teams).filter(
         ([team, users]) => team !== "Mixed" && users.length >= 4
       );
+
+      console.log("eligibleTeams:", eligibleTeams.length);
+      console.log("users:", nonBotUsers.length);
 
       let team1 = null;
       let team2 = null;
 
       if (eligibleTeams.length >= 2) {
         [team1, team2] = eligibleTeams.slice(0, 2);
-      } else if (
-        eligibleTeams.length === 1 && nonBotUsers.length >= testing ? 3 : 8
+      }
+      if (
+        eligibleTeams.length === 1 &&
+        nonBotUsers.length >= (testing ? 3 : 8)
       ) {
         team1 = eligibleTeams[0];
         const mixedPool = nonBotUsers.filter(
@@ -344,24 +350,12 @@ client.on("messageReactionAdd", async (reaction, user) => {
         const mentions1 = team1[1].map((u) => `<@${u.id}>`).join(", ");
         const mentions2 = team2[1].map((u) => `<@${u.id}>`).join(", ");
 
-        const today = moment.utc();
-        const targetDay = emojiIndex + 1;
-        const currentDay = today.isoWeekday();
-        let daysToAdd = targetDay - currentDay;
-        if (daysToAdd < 0) daysToAdd += 7;
-        const eventMoment = today
-          .clone()
-          .add(daysToAdd, "days")
-          .set({ hour: 18, minute: 0 });
-
-        const createdEvent = await guild.scheduledEvents.create({
-          name: `4v4 Jetstrike Scrims - ${dayName}`,
-          scheduledStartTime: eventMoment.toDate(),
-          privacyLevel: 2,
-          entityType: 2,
-          channel: voiceChannelId,
-          description: `Weekly in-house scrims happening on ${dayName} at **18:00 UTC**!\n\n🕐 **Duration:** 1 Hour\n🎯 **Min players:** ${reactionThreshold}`,
-        });
+        const { createdEvent, eventMoment } = await createEvent(
+          emojiIndex,
+          guild,
+          dayName,
+          reactionThreshold
+        );
 
         createdEventIds[emoji] = createdEvent.id;
 
@@ -371,24 +365,9 @@ client.on("messageReactionAdd", async (reaction, user) => {
             `🟦 **Team 2 (${name2})**:\n${mentions2}`
         );
 
+        await scheduleReminder(eventMoment, emoji, reaction, channel, dayName);
+
         const timeUntilStart = eventMoment.diff(moment.utc());
-        const reminderMoment = eventMoment.clone().subtract(30, "minutes");
-        const timeUntilReminder = reminderMoment.diff(moment.utc());
-
-        if (timeUntilReminder > 0) {
-          scheduledReminders[emoji] = setTimeout(async () => {
-            const updatedReaction = await reaction.message.reactions.cache
-              .get(emoji)
-              ?.fetch();
-            const users = await updatedReaction.users.fetch();
-            const validUsers = Array.from(users.values()).filter((u) => !u.bot);
-            const mentions = validUsers.map((u) => `<@${u.id}>`).join(", ");
-
-            await channel.send(
-              `⏰ **Reminder!** Scrim for **${dayName}** starts in 30 minutes!\n${mentions}`
-            );
-          }, timeUntilReminder);
-        }
 
         if (timeUntilStart > 0) {
           setTimeout(async () => {
@@ -405,15 +384,61 @@ client.on("messageReactionAdd", async (reaction, user) => {
               }
             }
 
-            await startReadyCheck(
-              channel,
-              warThunderPlayers,
-              "(default map or TBD)"
-            );
+            // await startReadyCheck(
+            //   channel,
+            //   warThunderPlayers,
+            //   "(default map or TBD)"
+            // );
           }, timeUntilStart);
         }
-      } else {
-        console.log("❌ Not enough for 2 valid teams yet.");
+      } else if (
+        eligibleTeams.length === 0 &&
+        nonBotUsers.length >= (testing ? 1 : 8)
+      ) {
+        const mentionableUsers = nonBotUsers
+          .map((u) => `<@${u.id}>`)
+          .join(", ");
+        console.log("No eligible teams found.");
+        const { createdEvent, eventMoment } = await createEvent(
+          emojiIndex,
+          guild,
+          dayName,
+          reactionThreshold
+        );
+
+        createdEventIds[emoji] = createdEvent.id;
+
+        await channel.send(
+          `✅ **Scrim confirmed for ${dayName} at 18:00 UTC!**\n\n` +
+            ` ** Mixed Teams Session: ** ${mentionableUsers}\n`
+        );
+
+        await scheduleReminder(eventMoment, emoji, reaction, channel, dayName);
+
+        const timeUntilStart = eventMoment.diff(moment.utc());
+
+        if (timeUntilStart > 0) {
+          setTimeout(async () => {
+            const warThunderPlayers = [];
+
+            for (const user of nonBotUsers) {
+              const member = await guild.members.fetch(user.id);
+              const idRole = member.roles.cache.find((r) =>
+                r.name.startsWith("id-")
+              );
+              if (idRole) {
+                const warId = parseInt(idRole.name.slice(3));
+                warThunderPlayers.push({ id: user.id, warId });
+              }
+            }
+
+            // await startReadyCheck(
+            //   channel,
+            //   warThunderPlayers,
+            //   "(default map or TBD)"
+            // );
+          }, timeUntilStart);
+        }
       }
     }
   } catch (error) {
@@ -454,8 +479,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
         }
 
         await channel.send(
-          `❌ **Scrim for ${dayName} canceled. Not enough players.**
-` +
+          `❌ **Scrim for ${dayName} canceled. Not enough players.**` +
             `${
               threshold - count
             } player(s) required to recreate event. If interested, react to original post.`
@@ -515,3 +539,51 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 client.login(token);
+
+async function scheduleReminder(
+  eventMoment,
+  emoji,
+  reaction,
+  channel,
+  dayName
+) {
+  const reminderMoment = eventMoment.clone().subtract(30, "minutes");
+  const timeUntilReminder = reminderMoment.diff(moment.utc());
+
+  if (timeUntilReminder > 0) {
+    scheduledReminders[emoji] = setTimeout(async () => {
+      const updatedReaction = await reaction.message.reactions.cache
+        .get(emoji)
+        ?.fetch();
+      const users = await updatedReaction.users.fetch();
+      const validUsers = Array.from(users.values()).filter((u) => !u.bot);
+      const mentions = validUsers.map((u) => `<@${u.id}>`).join(", ");
+
+      await channel.send(
+        `⏰ **Reminder!** Scrim for **${dayName}** starts in 30 minutes!\n${mentions}`
+      );
+    }, timeUntilReminder);
+  }
+}
+
+async function createEvent(emojiIndex, guild, dayName, reactionThreshold) {
+  const today = moment.utc();
+  const targetDay = emojiIndex + 1;
+  const currentDay = today.isoWeekday();
+  let daysToAdd = targetDay - currentDay;
+  if (daysToAdd < 0) daysToAdd += 7;
+  const eventMoment = today
+    .clone()
+    .add(daysToAdd, "days")
+    .set({ hour: 18, minute: 0 });
+
+  const createdEvent = await guild.scheduledEvents.create({
+    name: `4v4 Jetstrike Scrims - ${dayName}`,
+    scheduledStartTime: eventMoment.toDate(),
+    privacyLevel: 2,
+    entityType: 2,
+    channel: voiceChannelId,
+    description: `Weekly in-house scrims happening on ${dayName} at **18:00 UTC**!\n\n🕐 **Duration:** 1 Hour\n🎯 **Min players:** ${reactionThreshold}`,
+  });
+  return { createdEvent, eventMoment };
+}
