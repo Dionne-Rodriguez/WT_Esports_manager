@@ -6,12 +6,17 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  inlineCode,
 } from "discord.js";
 import moment from "moment";
 import dotenv from "dotenv";
 import cron from "node-cron";
 import express from "express";
 import registerRoutes from "./routes.js";
+import { createSession } from "./sessionManager.js";
+import mapsByType from "./mapsByType.json" assert { type: "json" };
+
+// Now you can use mapsByType exactly the same way:
 
 dotenv.config();
 
@@ -19,7 +24,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Hello World! 🌍"));
 app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
-const testing = false; // Set to false for production
+const testing = true; // Set to false for production
 
 const client = new Client({
   intents: [
@@ -43,6 +48,7 @@ let messageId = null;
 let eventCreated = {};
 let createdEventIds = {};
 let scheduledReminders = {};
+let scheduledStartChecks = {};
 
 const numberEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
 const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday"];
@@ -58,22 +64,52 @@ const commands = [
         .setDescription("Your War Thunder numeric user ID")
         .setRequired(true)
     ),
+
   new SlashCommandBuilder()
     .setName("session")
     .setDescription("Start a custom War Thunder lobby")
     .addBooleanOption((opt) =>
       opt
         .setName("self_select")
-        .setDescription("If false, team-based formation will be applied")
+        .setDescription(
+          "If false, bot will auto‐assign teams; if true, teams are up to players"
+        )
         .setRequired(true)
     )
     .addStringOption((opt) =>
       opt
-        .setName("mapurl")
-        .setDescription("Optional map URL or a random one will be selected")
-        .setRequired(false)
+        .setName("rounds_per_map")
+        .setDescription("Number of rounds played on each selected map")
+        .setRequired(true)
+        .addChoices(
+          { name: "1", value: "1" },
+          { name: "2", value: "2" },
+          { name: "3", value: "3" },
+          { name: "4", value: "4" },
+          { name: "5", value: "5" }
+        )
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName("match_type")
+        .setDescription("match type")
+        .setRequired(true)
+        .addChoices(
+          { name: "1v1 Joust", value: 1 },
+          { name: "2v2", value: 2 },
+          { name: "4v4", value: 4 },
+          { name: "6v6", value: 6 }
+        )
+    )
+    .addStringOption((opt) =>
+      opt
+        .setName("map_option")
+        .setDescription("Select a map for your chosen match type")
+        .setRequired(true)
+        .setAutocomplete(true)
     ),
 ].map((command) => command.toJSON());
+
 const rest = new REST({ version: "10" }).setToken(token);
 
 (async () => {
@@ -94,7 +130,7 @@ const rest = new REST({ version: "10" }).setToken(token);
 
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  registerRoutes(app, client, postNewScrimInterest);
+  registerRoutes(app, client, postNewScrimInterest, channelId);
 
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
@@ -145,16 +181,31 @@ async function postNewScrimInterest() {
   }
 }
 
-async function startReadyCheck(channel, players, mapUrl, selfSelectTeam) {
-  const readyMsg = await channel.send(
-    `✅ All players confirmed for a scrim!
-**Ready Check**: React with 👍 when you are online and logged into War Thunder.
-We need all ${players.length} players to react in order for invites to be sent out.`
-  );
+async function startReadyCheck(
+  channel,
+  players,
+  selfSelectTeam,
+  mapOption,
+  roundsPerMap,
+  playersPerTeam,
+  team1,
+  team2
+) {
+  let teamA_warIds = [];
+  let teamB_warIds = [];
+  const embed = new EmbedBuilder()
+    .setTitle("Online Check in 📝")
+    .setDescription(
+      `All players confirmed for a session.\n\n` +
+        `React with 👍 when you are ** online and logged into War Thunder. **\n\n` +
+        `** We need all ${players.length} players to react in order for invites to be sent out. **`
+    )
+    .setColor(0x00ff00);
+  const message = await channel.send({ embeds: [embed] });
 
-  await readyMsg.react("👍");
+  await message.react("👍");
 
-  const readyCollector = readyMsg.createReactionCollector({
+  const readyCollector = message.createReactionCollector({
     filter: (reaction, user) => {
       return (
         reaction.emoji.name === "👍" &&
@@ -177,69 +228,203 @@ We need all ${players.length} players to react in order for invites to be sent o
 
   readyCollector.on("end", async (collected, reason) => {
     if (reason === "all-ready") {
-      await channel.send(
-        "All players are ready and online. Sending invites and launching lobby..."
+      if (!selfSelectTeam) {
+        teamA_warIds = warIds.slice(0, playersPerTeam);
+        teamB_warIds = warIds.slice(playersPerTeam, playersPerTeam * 2);
+
+        let mentionsA = playerArray
+          .filter((p) => teamA_warIds.includes(p.warId))
+          .map((p) => `<@${p.id}>`)
+          .join(", ");
+        let mentionsB = playerArray
+          .filter((p) => teamB_warIds.includes(p.warId))
+          .map((p) => `<@${p.id}>`)
+          .join(", ");
+
+        console.log("team1:", team1);
+        console.log("team2:", team2);
+
+        if (team1 && team2) {
+          teamA_warIds = team1.team1[0];
+          teamB_warIds = team2.team2[0];
+          mentionsA = team1.mentions1;
+          mentionsB = team2.mentions2;
+        }
+
+        await channel.send(
+          `Teams randomly created\n\n` +
+            `(Rounds per map ${roundsPerMap}):\n\n` +
+            `🟥 **Team A** (${teamA_warIds.length} players):\n${mentionsA}\n\n` +
+            `🟦 **Team B** (${teamB_warIds.length} players):\n${mentionsB}\n\n`
+        );
+      }
+      const inviteFields = players.map((p) => {
+        if (!p.id || !p.warId) {
+          console.warn("Bad player object:", p);
+        }
+        return { name: "🥷", value: `<@${p.id}>` };
+      });
+
+      console.log("inviteFields:", inviteFields);
+
+      const embed = new EmbedBuilder()
+        .setTitle("Creating Session...")
+        .setDescription(`Sending invites to`)
+        .addFields(...inviteFields)
+        .setColor(0x00ff00);
+      const message = await channel.send({
+        embeds: [embed],
+        allowedMentions: { parse: ["users"] },
+      });
+      console.log(
+        mapOption,
+        teamA_warIds,
+        teamB_warIds,
+        roundsPerMap,
+        players.map((p) => p.warId.toString()),
+        selfSelectTeam
       );
-      await createCustomLobby(
-        mapUrl,
-        new Map(players.map((p) => [p.id, p.warId])),
-        channel
-      );
+      const res = await createSession({
+        mapOption,
+        teamA: teamA_warIds,
+        teamB: teamB_warIds,
+        roundsPerMap,
+        players: players.map((p) => p.warId.toString()),
+        selfSelectTeam,
+      });
+      const offline = res.offlineInvites.length > 0;
+      if (res.lobbyId) {
+        const embed = new EmbedBuilder()
+          .setTitle("Session Created")
+          .setDescription(
+            `** Lobby ID: ** ${res.lobbyId}\n` +
+              `** Map: ** ${mapOption}\n` +
+              `** Rounds per map: ** ${roundsPerMap}\n` +
+              `** Players: ** ${players.length}`
+          )
+          .setFields(
+            players.map((p) => ({
+              name: `${offline ? "Offline ❌" : "Invited ✅"}`,
+              value: `<@${p.id}>`,
+            }))
+          )
+          .setColor(0x00ff00);
+        await channel.send({
+          embeds: [embed],
+          allowedMentions: { parse: ["users"] },
+        });
+      }
     }
   });
 }
 
-const MIN_PLAYERS = testing ? 2 : 8;
-
-function setupSessionCollector(announceMessage, mapUrl, selfSelectTeam) {
+async function setupSessionCollector(
+  announceMessage,
+  mapOption,
+  selfSelectTeam,
+  playersPerTeam,
+  roundsPerMap
+) {
+  const MIN_PLAYERS = playersPerTeam * 2; // Minimum players required for a session
   const participants = new Map();
 
-  const filter = (reaction, user) => {
-    return !user.bot && reaction.emoji.name === "👍";
-  };
+  const filter = (reaction, user) => !user.bot && reaction.emoji.name === "👍";
 
-  const collector = announceMessage.createReactionCollector({
-    filter,
-  });
+  const collector = announceMessage.createReactionCollector({ filter });
 
   collector.on("collect", async (reaction, user) => {
     const member = await announceMessage.guild.members.fetch(user.id);
     const idRole = member.roles.cache.find((r) => r.name.startsWith("id-"));
+    const channel = announceMessage.channel;
 
     if (!idRole) {
       try {
         await reaction.users.remove(user.id);
       } catch {}
       await announceMessage.channel.send({
-        content: `${user}, your War Thunder ID role is missing. Please use \`/user id <your_id>\` to register before joining.`,
+        content: `${user}, please register your War Thunder ID via \`/user id <your_id>\` first.`,
       });
       return;
     }
 
-    const warId = parseInt(idRole.name.slice(3));
+    const warId = parseInt(idRole.name.slice(3), 10);
     participants.set(user.id, warId);
-    console.log(
-      `✅ ${user.tag} joined session (${participants.size}/${MIN_PLAYERS})`
+
+    channel.send(
+      `✅ ${user} has joined the session! (${participants.size}/${MIN_PLAYERS})`
     );
 
-    if (participants.size >= MIN_PLAYERS) {
+    console.log("eval", participants.size >= (testing ? 2 : MIN_PLAYERS));
+    console.log(typeof participants.size, participants.size);
+    if (participants.size >= (testing ? 2 : MIN_PLAYERS)) {
+      console.log(
+        `🔔 Enough players joined: ${participants.size}/${MIN_PLAYERS}`
+      );
       collector.stop("enough-players");
     }
   });
 
   collector.on("end", async (_collected, reason) => {
-    if (participants.size < MIN_PLAYERS) {
-      await announceMessage.reply(
-        "❌ Not enough players joined the lobby in time."
-      );
-      return;
-    }
-
     const channel = announceMessage.channel;
+    // if (participants.size < MIN_PLAYERS) {
+    //   return announceMessage.reply(
+    //     "Not enough players joined the lobby in time."
+    //   );
+    // }
+
     const playerArray = Array.from(participants.entries()).map(
       ([id, warId]) => ({ id, warId })
     );
-    await startReadyCheck(channel, playerArray, mapUrl, selfSelectTeam);
+    const warIds = playerArray.map((p) => p.warId);
+
+    if (selfSelectTeam) {
+      // ── CASE A: self‐select = true ──
+      await channel.send(
+        `All ${playerArray.length} players joined session queue. Teams will be self‐selected.\n` +
+          `calling startReadyCheck()`
+      );
+
+      await startReadyCheck(
+        channel,
+        playerArray,
+        selfSelectTeam,
+        mapOption,
+        roundsPerMap,
+        playersPerTeam
+      );
+    } else {
+      // ── CASE B: self‐select = false ──
+      // Auto‐assign teams of size = playersPerTeam:
+      console.log(warIds);
+      console.log();
+      const teamA_warIds = warIds.slice(0, playersPerTeam);
+      const teamB_warIds = warIds.slice(playersPerTeam, playersPerTeam * 2);
+
+      const mentionsA = playerArray
+        .filter((p) => teamA_warIds.includes(p.warId))
+        .map((p) => `<@${p.id}>`)
+        .join(", ");
+      const mentionsB = playerArray
+        .filter((p) => teamB_warIds.includes(p.warId))
+        .map((p) => `<@${p.id}>`)
+        .join(", ");
+
+      await channel.send(
+        `✅ Teams formed (Rounds per map ${roundsPerMap}):\n\n` +
+          `🟥 **Team A** (${teamA_warIds.length} players):\n${mentionsA}\n\n` +
+          `🟦 **Team B** (${teamB_warIds.length} players):\n${mentionsB}\n\n` +
+          `Launching lobby now...`
+      );
+
+      await createSession({
+        mapOption,
+        teamA: teamA_warIds,
+        teamB: teamB_warIds,
+        players: playerArray.map((p) => p.warId.toString()),
+        selfSelectTeam: false,
+        roundsPerMap,
+      });
+    }
   });
 }
 
@@ -351,18 +536,22 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
         createdEventIds[emoji] = createdEvent.id;
 
-        await channel.send(
-          `✅ **Scrim confirmed for ${dayName} at 18:00 UTC!**\n\n` +
+        const embed = new EmbedBuilder()
+          .setTitle("Scrim confirmed for ${dayName} at 18:00 UTC!")
+          .setDescription(
             `🟥 **Team 1 (${name1})**:\n${mentions1}\n\n` +
-            `🟦 **Team 2 (${name2})**:\n${mentions2}`
-        );
+              `🟦 **Team 2 (${name2})**:\n${mentions2}`
+          )
+          .setColor(0x00ff00);
+
+        await channel.send({ embeds: [embed] });
 
         await scheduleReminder(eventMoment, emoji, reaction, channel, dayName);
 
         const timeUntilStart = eventMoment.diff(moment.utc());
 
         if (timeUntilStart > 0) {
-          setTimeout(async () => {
+          const timeoutHandle = setTimeout(async () => {
             const warThunderPlayers = [];
 
             for (const user of nonBotUsers) {
@@ -375,13 +564,20 @@ client.on("messageReactionAdd", async (reaction, user) => {
                 warThunderPlayers.push({ id: user.id, warId });
               }
             }
-
-            // await startReadyCheck(
-            //   channel,
-            //   warThunderPlayers,
-            //   "(default map or TBD)"
-            // );
+            if (eventCreated[emoji]) {
+              await startReadyCheck(
+                channel,
+                warThunderPlayers,
+                false,
+                "4-All",
+                3,
+                4,
+                { team1: { team1, mentions1 } },
+                { team2: { team2, mentions2 } }
+              );
+            }
           }, timeUntilStart);
+          scheduledStartChecks[emoji] = timeoutHandle;
         }
       } else if (
         eligibleTeams.length === 0 &&
@@ -400,17 +596,19 @@ client.on("messageReactionAdd", async (reaction, user) => {
 
         createdEventIds[emoji] = createdEvent.id;
 
-        await channel.send(
-          `✅ **Scrim confirmed for ${dayName} at 18:00 UTC!**\n\n` +
-            ` ** Mixed Teams Session: ** ${mentionableUsers}\n`
-        );
+        const embed = new EmbedBuilder()
+          .setTitle(`Scrim confirmed for ${dayName} at 18:00 UTC!`)
+          .setDescription(` ** Mixed Team Session: ** \n ${mentionableUsers}\n`)
+          .setColor(0x00ff00);
+
+        await channel.send({ embeds: [embed] });
 
         await scheduleReminder(eventMoment, emoji, reaction, channel, dayName);
 
         const timeUntilStart = eventMoment.diff(moment.utc());
 
         if (timeUntilStart > 0) {
-          setTimeout(async () => {
+          const timeoutHandle = setTimeout(async () => {
             const warThunderPlayers = [];
 
             for (const user of nonBotUsers) {
@@ -424,12 +622,18 @@ client.on("messageReactionAdd", async (reaction, user) => {
               }
             }
 
-            // await startReadyCheck(
-            //   channel,
-            //   warThunderPlayers,
-            //   "(default map or TBD)"
-            // );
+            if (eventCreated[emoji]) {
+              await startReadyCheck(
+                channel,
+                warThunderPlayers,
+                true,
+                "4-All",
+                3,
+                4
+              );
+            }
           }, timeUntilStart);
+          scheduledStartChecks[emoji] = timeoutHandle;
         }
       }
     }
@@ -470,12 +674,20 @@ client.on("messageReactionRemove", async (reaction, user) => {
           scheduledReminders[emoji] = null;
         }
 
-        await channel.send(
-          `❌ **Scrim for ${dayName} canceled. Not enough players.**` +
+        if (scheduledStartChecks[emoji]) {
+          clearTimeout(scheduledStartChecks[emoji]);
+          scheduledStartChecks[emoji] = null;
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle(`❌ **Scrim for ${dayName} canceled. Not enough players.**`)
+          .setDescription(
             `${
               threshold - count
             } player(s) required to recreate event. If interested, react to original post.`
-        );
+          )
+          .setColor("Red");
+        await channel.send({ embeds: [embed] });
       }
     }
   } catch (error) {
@@ -484,12 +696,34 @@ client.on("messageReactionRemove", async (reaction, user) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
+  // ① If Discord is asking for autocomplete results…
+  if (interaction.isAutocomplete() && interaction.commandName === "session") {
+    const focused = interaction.options.getFocused(true);
+    if (focused.name === "map_option") {
+      // partial text user typed (lowercase)
+      const input = focused.value.toLowerCase();
+
+      // what did they pick for match_type so far? Default to 4 if missing
+      const mode = interaction.options.getInteger("match_type") ?? 4;
+      const allMaps = mapsByType[mode] || [];
+
+      // filter by name match; return up to 25 suggestions
+      const choices = allMaps
+        .filter((m) => m.name.toLowerCase().includes(input))
+        .slice(0, 25)
+        .map((m) => ({ name: m.name, value: m.value }));
+
+      return interaction.respond(choices);
+    }
+  }
+
   if (!interaction.isCommand()) return;
   if (interaction.commandName === "user") {
     const warThunderId = interaction.options.getInteger("id");
     if (!warThunderId) {
       await interaction.reply({
-        content: "Please provide a valid War Thunder user ID.",
+        content:
+          "Please provide a valid War Thunder user ID. You can get this by going on https://store.gaijin.net/user.php and copying your id.",
         ephemeral: true,
       });
       return;
@@ -513,20 +747,38 @@ client.on("interactionCreate", async (interaction) => {
     });
   }
   if (interaction.commandName === "session") {
-    const mapUrl = interaction.options.getString("mapurl") || "Default map";
+    const mapOption =
+      interaction.options.getString("map_option") || "Default map";
     const selfSelect = interaction.options.getBoolean("self_select"); // true or false
+    const roundsPerMap = interaction.options.getString("rounds_per_map");
+    const playersPerTeam = interaction.options.getInteger("match_type");
 
     console.log(
-      `Session command received. Map URL: ${mapUrl}, Self-select: ${selfSelect}`
+      `Creating session with mapOption: ${mapOption}, selfSelect: ${selfSelect}, roundsPerMap: ${roundsPerMap}, playersPerTeam: ${playersPerTeam}`
     );
+
     const announce = await interaction.reply({
-      content: `**Custom War Thunder Lobby Announcement**\nMap: ${mapUrl}\nPlayers self select team: ${selfSelect}\nReact with 👍 to join the lobby! (Need at least 8 players)`,
+      content:
+        `**Custom War Thunder Lobby Announcement**\n` +
+        `Map: ${mapOption}\n` +
+        `Players self‐select teams: ${selfSelect}\n` +
+        `Rounds per map: ${roundsPerMap}\n` +
+        `Match type: ${playersPerTeam}v${playersPerTeam}\n\n` +
+        `React with 👍 to join this session queue! (min required:${
+          playersPerTeam * 2
+        })`,
       fetchReply: true,
     });
-
     await announce.react("👍");
 
-    setupSessionCollector(announce, mapUrl, selfSelect);
+    // Pass all three flags (mapOption, selfSelect, playersPerTeam, roundsPerMap) into setupSessionCollector
+    await setupSessionCollector(
+      announce,
+      mapOption,
+      selfSelect,
+      playersPerTeam,
+      roundsPerMap
+    );
   }
 });
 
@@ -559,23 +811,39 @@ async function scheduleReminder(
 }
 
 async function createEvent(emojiIndex, guild, dayName, reactionThreshold) {
-  const today = moment.utc();
-  const targetDay = emojiIndex + 1;
-  const currentDay = today.isoWeekday();
-  let daysToAdd = targetDay - currentDay;
-  if (daysToAdd < 0) daysToAdd += 7;
-  const eventMoment = today
-    .clone()
-    .add(daysToAdd, "days")
-    .set({ hour: 18, minute: 0 });
+  let eventMoment;
+
+  if (testing) {
+    // In testing mode, schedule the event for now + 5 minutes
+    eventMoment = moment.utc().add(30, "seconds");
+  } else {
+    // Existing behavior: find next occurrence of weekday (1=Monday…4=Thursday) at 18:00 UTC
+    const today = moment.utc();
+    const targetDay = emojiIndex + 1; // Monday=1, Tuesday=2, etc.
+    const currentDay = today.isoWeekday();
+    let daysToAdd = targetDay - currentDay;
+    if (daysToAdd < 0) daysToAdd += 7;
+
+    eventMoment = today
+      .clone()
+      .add(daysToAdd, "days")
+      .set({ hour: 18, minute: 0, second: 0, millisecond: 0 });
+  }
 
   const createdEvent = await guild.scheduledEvents.create({
-    name: `4v4 Jetstrike Scrims - ${dayName}`,
+    name: testing
+      ? `🔧 (Testing) Scrim starts shortly!`
+      : `4v4 Jetstrike Scrims – ${dayName}`,
     scheduledStartTime: eventMoment.toDate(),
-    privacyLevel: 2,
-    entityType: 2,
+    privacyLevel: 2, // GUILD_ONLY
+    entityType: 2, // VOICE
     channel: voiceChannelId,
-    description: `Weekly in-house scrims happening on ${dayName} at **18:00 UTC**!\n\n🕐 **Duration:** 1 Hour\n🎯 **Min players:** ${reactionThreshold}`,
+    description: testing
+      ? `This is a test event scheduled for ${eventMoment.format(
+          "YYYY-MM-DD HH:mm"
+        )} UTC.`
+      : `Weekly in-house scrims happening on ${dayName} at **18:00 UTC**!\n\n🕐 **Duration:** 1 Hour\n🎯 **Min players:** ${reactionThreshold}`,
   });
+
   return { createdEvent, eventMoment };
 }

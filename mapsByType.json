@@ -1,0 +1,57 @@
+{
+  "1": [
+    {
+      "name": "Joust Water Map",
+      "value": "https://live.warthunder.com/dl/6c7855d140f670c2bacb89d02d79e6caec76df83/"
+    },
+    {
+      "name": "Joust Denmark",
+      "value": "https://live.warthunder.com/dl/b225c8eb804d95a98b22ab014e3905f9d4260806/"
+    },
+    {
+      "name": "Joust African Desert (made by Demonuk)",
+      "value": "https://live.warthunder.com/dl/764ef8902bc8f7b02de7abbf599a1def047e3fc1/"
+    },
+    {
+      "name": "All",
+      "value": "1-All"
+    }
+  ],
+  "2": [
+    {
+      "name": "Iron Range",
+      "value": "https://live.warthunder.com/dl/de4c0ae184815593acbef185df3469c4b010e289/"
+    },
+    {
+      "name": "Norway",
+      "value": "https://live.warthunder.com/dl/aa00567d99543d0203646773a0d335c9244fbfe0/"
+    },
+    {
+      "name": "All",
+      "value": "2-All"
+    }
+  ],
+  "4": [
+    {
+      "name": "Desert",
+      "value": "https://live.warthunder.com/dl/dd8453e8125169c8c183a261bb4c4cc81ad0e622/"
+    },
+    {
+      "name": "Mysterious Valley",
+      "value": "https://live.warthunder.com/dl/8ae3265814078ff61feb1a7c23da31d4a41b8e1d/"
+    },
+    {
+      "name": "Japan",
+      "value": "https://live.warthunder.com/dl/03abd0c898e9b3e835bba679c062952217c56c74/"
+    },
+    {
+      "name": "Kamchatka",
+      "value": "https://live.warthunder.com/dl/ebb78431da1c9043378c466c71e053a0cf752b51/"
+    },
+    {
+      "name": "All",
+      "value": "4-All"
+    }
+  ],
+  "6": [{ "name": "test 6v6", "value": "test 6v6 value" }]
+}
