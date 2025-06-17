@@ -27,7 +27,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Hello World! 🌍"));
 app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
-const testing = process.env.TESTING; // Set to false for production
+const testing = process.env.TESTING === "true";
 
 const client = new Client({
   intents: [
