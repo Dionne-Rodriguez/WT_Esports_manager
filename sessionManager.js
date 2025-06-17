@@ -1,6 +1,10 @@
 // sessionManager.js
 
-import { createCustomLobby, closeLobby } from "./WTEsportsClient.js";
+import {
+  createCustomLobby,
+  closeLobby,
+  updateLobby,
+} from "./WTEsportsClient.js";
 import mapsByType from "./mapsByType.json" assert { type: "json" };
 
 /**
@@ -17,6 +21,7 @@ import mapsByType from "./mapsByType.json" assert { type: "json" };
  *  }
  */
 const activeSessions = new Map();
+let lobbyId = null;
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +48,7 @@ export async function createSession({
   selfSelectTeam,
   roundsPerMap = 1,
 }) {
+  roundsPerMap = 1;
   if (roundsPerMap < 1) {
     throw new Error("roundsPerMap must be at least 1");
   }
@@ -77,7 +83,7 @@ export async function createSession({
   );
 
   const response = await createCustomLobby(payload);
-  let lobbyId = response.roomId;
+  lobbyId = response.roomId;
   const offlineInvites = response.offlineInvites || [];
   if (typeof lobbyId === "number") lobbyId = lobbyId.toString();
 
@@ -151,25 +157,25 @@ export async function handleLobbyEnded(endedLobbyId) {
 
   try {
     // destroy the old lobby first
-    const destroyedResp = await closeLobby();
-    if (destroyedResp.status !== "Lobby destroyed") {
-      throw new Error(
-        `Failed to destroy lobby ${endedLobbyId}: ${destroyedResp.status}`
-      );
-    }
+    // const destroyedResp = await closeLobby();
+    // if (destroyedResp.status !== "Lobby destroyed") {
+    //   throw new Error(
+    //     `Failed to destroy lobby ${endedLobbyId}: ${destroyedResp.status}`
+    //   );
+    // }
 
-    console.log(`⏱  Waiting 5s before creating the next lobby…`);
-    await delay(5000);
-
-    const response = await createCustomLobby(
-      makePayload(nextMapUrl, teamA, teamB, players, selfSelectTeam)
-    );
-    let newLobbyId = response.roomId;
-    if (typeof newLobbyId === "number") newLobbyId = newLobbyId.toString();
+    // const response = await createCustomLobby(
+    //   makePayload(nextMapUrl, teamA, teamB, players, selfSelectTeam)
+    // );
+    // let newLobbyId = response.roomId;
+    // if (typeof newLobbyId === "number") newLobbyId = newLobbyId.toString();
 
     // Replace the session under the new lobbyId
-    activeSessions.delete(endedLobbyId);
-    activeSessions.set(newLobbyId, {
+    // activeSessions.delete(endedLobbyId);
+    await updateLobby({ missionURL: nextMapUrl });
+    // TODO: update the lobby instead of making a new one
+
+    activeSessions.set(lobbyId, {
       players,
       teamA,
       teamB,
@@ -180,15 +186,16 @@ export async function handleLobbyEnded(endedLobbyId) {
     });
 
     console.log(
-      `✅  Created lobby for next round (ID = ${newLobbyId}). Waiting for callback…`
+      `✅  Created lobby for next round (ID = ${lobbyId}). Waiting for callback…`
     );
   } catch (err) {
     console.error(
-      `❌  Failed to create next lobby after ${endedLobbyId} ended:`,
+      `❌  Failed to create next round for lobby ${endedLobbyId} ended:`,
       err
     );
     activeSessions.delete(endedLobbyId);
     console.log(`❌  Session aborted; state cleared for ${endedLobbyId}.`);
+    await closeLobby();
   }
 }
 

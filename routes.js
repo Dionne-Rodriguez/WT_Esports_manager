@@ -102,4 +102,52 @@ export default function registerRoutes(
         .json({ success: false, error: err.message || "Unknown error" });
     }
   });
+
+  app.post("/lobby-stale", express.json(), async (req, res) => {
+    try {
+      const { roomId } = req.body;
+      if (!roomId) {
+        return res
+          .status(400)
+          .json({ success: false, error: "Missing lobbyId in request body" });
+      }
+
+      // const { roomId } = req.data;
+      // if (typeof roomId !== "number") {
+      //   console.error("❌ Invalid payload to /lobbyStarted:", req.body);
+      //   return res.status(400).json({ error: "Invalid JSON payload." });
+      // }
+
+      console.log(`Lobby closed for ${roomId}`);
+
+      const embed = new EmbedBuilder()
+        .setTitle("Lobby Closed")
+        .addFields(
+          { name: "Room ID", value: `${roomId}`, inline: true },
+          {
+            name: "Closed At",
+            value: moment.utc().format("YYYY-MM-DD hh:mm A"),
+            inline: true,
+          }
+        )
+        .setColor(0x00ff00) // green accent
+        .setTimestamp(new Date());
+
+      const channel = await client.channels.fetch(channelId);
+      if (!channel || !channel.send) {
+        console.error("❌ Cannot find Discord channel:", channelId);
+        return res.status(500).json({ error: "Discord channel not found." });
+      }
+
+      await channel.send({ embeds: [embed] });
+      console.log(`✅ Notified Discord about lobby ${roomId} closing.`);
+
+      return res.status(200).json({ message: "Discord notified." });
+    } catch (err) {
+      console.error("Error in /lobby-stale:", err);
+      return res
+        .status(500)
+        .json({ success: false, error: err.message || "Unknown error" });
+    }
+  });
 }

@@ -1,6 +1,7 @@
 import moment from "moment";
 import dotenv from "dotenv";
 import { EmbedBuilder } from "discord.js";
+import mapsByType from "./mapsByType.json" assert { type: "json" };
 
 dotenv.config();
 const testing = process.env.TESTING === "true";
@@ -29,4 +30,36 @@ export async function postLobbyStartedEmbedMessage(client, roomId) {
   }
 
   await channel.send({ embeds: [embed] });
+}
+
+export async function postJoinedSessionEmbedMessage(
+  client,
+  user,
+  participants,
+  MIN_PLAYERS
+) {
+  const channel = await client.channels.fetch(channelId);
+  const embed = new EmbedBuilder()
+    .setTitle(
+      `✅ ${user} has joined the session! (${participants.size}/${MIN_PLAYERS})`
+    )
+    .setColor(0x00ff00);
+
+  if (!channel || !channel.send) {
+    console.error("❌ Cannot find Discord channel:", channelId);
+    throw new Error(`Discord channel ${channelId} not found.`);
+  }
+
+  await channel.send({
+    embeds: [embed],
+    allowedMentions: { parse: ["users"] },
+  });
+}
+
+export function getMapNameFromUrl(mapUrl) {
+  for (const group of Object.values(mapsByType)) {
+    const match = group.find((m) => m.value === mapUrl);
+    if (match) return match.name;
+  }
+  return "Custom Map"; // fallback
 }

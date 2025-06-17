@@ -1,16 +1,16 @@
 {
   "1": [
     {
-      "name": "Joust Water Map",
-      "value": "https://live.warthunder.com/dl/6c7855d140f670c2bacb89d02d79e6caec76df83/"
+      "name": "Joust Water Map (made by Demonuk)",
+      "value": "https://warthundercustombattles.com/m/1v1JoustWaterTicketbleed"
     },
     {
-      "name": "Joust Denmark",
-      "value": "https://live.warthunder.com/dl/b225c8eb804d95a98b22ab014e3905f9d4260806/"
+      "name": "Joust Denmark (made by Demonuk)",
+      "value": "https://live.warthunder.com/dl/ef0836bdce3b29506d7aabae43dfc2a7ed8e3bf5/"
     },
     {
       "name": "Joust African Desert (made by Demonuk)",
-      "value": "https://live.warthunder.com/dl/764ef8902bc8f7b02de7abbf599a1def047e3fc1/"
+      "value": "https://live.warthunder.com/dl/2457fb80913576339b333bf72185068d4d3c6e98/"
     },
     {
       "name": "All",
@@ -34,19 +34,23 @@
   "4": [
     {
       "name": "Desert",
-      "value": "https://live.warthunder.com/dl/dd8453e8125169c8c183a261bb4c4cc81ad0e622/"
+      "value": "https://warthundercustombattles.com/m/RedDesertTicketBleed"
     },
     {
       "name": "Mysterious Valley",
-      "value": "https://live.warthunder.com/dl/8ae3265814078ff61feb1a7c23da31d4a41b8e1d/"
+      "value": "https://warthundercustombattles.com/m/ValleyTicketBleed"
     },
     {
       "name": "Japan",
-      "value": "https://live.warthunder.com/dl/03abd0c898e9b3e835bba679c062952217c56c74/"
+      "value": "https://warthundercustombattles.com/m/JapanTicketBleed"
     },
     {
       "name": "Kamchatka",
-      "value": "https://live.warthunder.com/dl/ebb78431da1c9043378c466c71e053a0cf752b51/"
+      "value": "https://warthundercustombattles.com/m/KamchatkaTicketBleed"
+    },
+    {
+      "name": "Bourbon",
+      "value": "https://warthundercustombattles.com/m/BourbonTicketBleed"
     },
     {
       "name": "All",

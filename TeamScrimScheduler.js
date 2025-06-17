@@ -15,6 +15,10 @@ import express from "express";
 import registerRoutes from "./routes.js";
 import { createSession } from "./sessionManager.js";
 import mapsByType from "./mapsByType.json" assert { type: "json" };
+import {
+  postJoinedSessionEmbedMessage,
+  getMapNameFromUrl,
+} from "./utilities.js";
 
 // Now you can use mapsByType exactly the same way:
 
@@ -288,17 +292,18 @@ async function startReadyCheck(
         mapOption,
         teamA: teamA_warIds,
         teamB: teamB_warIds,
-        roundsPerMap,
         players: players.map((p) => p.warId.toString()),
         selfSelectTeam,
+        roundsPerMap,
       });
       const offline = res.offlineInvites.length > 0;
+      const mapName = getMapNameFromUrl(mapOption);
       if (res.lobbyId) {
         const embed = new EmbedBuilder()
           .setTitle("Session Created")
           .setDescription(
             `** Lobby ID: ** ${res.lobbyId}\n` +
-              `** Map: ** ${mapOption}\n` +
+              `** Map: ** ${mapName}\n` +
               `** Rounds per map: ** ${roundsPerMap}\n` +
               `** Players: ** ${players.length}`
           )
@@ -350,9 +355,16 @@ async function setupSessionCollector(
     const warId = parseInt(idRole.name.slice(3), 10);
     participants.set(user.id, warId);
 
-    channel.send(
-      `✅ ${user} has joined the session! (${participants.size}/${MIN_PLAYERS})`
+    await postJoinedSessionEmbedMessage(
+      client,
+      user,
+      participants,
+      MIN_PLAYERS
     );
+
+    // channel.send(
+    //   `✅ ${user} has joined the session! (${participants.size}/${MIN_PLAYERS})`
+    // );
 
     console.log("eval", participants.size >= (testing ? 2 : MIN_PLAYERS));
     console.log(typeof participants.size, participants.size);
@@ -379,10 +391,10 @@ async function setupSessionCollector(
 
     if (selfSelectTeam) {
       // ── CASE A: self‐select = true ──
-      await channel.send(
-        `All ${playerArray.length} players joined session queue. Teams will be self‐selected.\n` +
-          `calling startReadyCheck()`
-      );
+      // await channel.send(
+      //   `All ${playerArray.length} players joined session queue. Teams will be self‐selected.\n` +
+      //     `calling startReadyCheck()`
+      // );
 
       await startReadyCheck(
         channel,
@@ -512,7 +524,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
       }
       if (
         eligibleTeams.length === 1 &&
-        nonBotUsers.length >= (testing ? 3 : 8)
+        nonBotUsers.length >= (testing ? 2 : 8)
       ) {
         team1 = eligibleTeams[0];
         const mixedPool = nonBotUsers.filter(
@@ -658,7 +670,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
     const emoji = reaction.emoji.name;
     const emojiIndex = numberEmojis.indexOf(emoji);
     const dayName = dayNames[emojiIndex];
-    const threshold = testing ? 3 : 8;
+    const threshold = testing ? 1 : 8;
 
     if (count < threshold && eventCreated[emoji]) {
       const guild = reaction.message.guild;
@@ -757,18 +769,42 @@ client.on("interactionCreate", async (interaction) => {
       `Creating session with mapOption: ${mapOption}, selfSelect: ${selfSelect}, roundsPerMap: ${roundsPerMap}, playersPerTeam: ${playersPerTeam}`
     );
 
-    const announce = await interaction.reply({
-      content:
-        `**Custom War Thunder Lobby Announcement**\n` +
-        `Map: ${mapOption}\n` +
-        `Players self‐select teams: ${selfSelect}\n` +
-        `Rounds per map: ${roundsPerMap}\n` +
-        `Match type: ${playersPerTeam}v${playersPerTeam}\n\n` +
-        `React with 👍 to join this session queue! (min required:${
-          playersPerTeam * 2
-        })`,
+    await interaction.reply({ ephemeral: false });
+
+    const mapName = getMapNameFromUrl(mapOption);
+
+    const embed = new EmbedBuilder()
+      .setTitle("War Thunder Session")
+      .addFields(
+        { name: "🗺️ Map", value: mapName },
+        {
+          name: "🎮 Players self-select teams",
+          value: selfSelect ? "Yes" : "No",
+        },
+        {
+          name: "🔁 Rounds per map",
+          value: `${roundsPerMap}`,
+        },
+        {
+          name: "⚔️ Match type",
+          value: `${playersPerTeam}v${playersPerTeam}`,
+        },
+        {
+          name: "✅ How to Join",
+          value: `React with 👍 to join this session queue! (Min required: ${
+            playersPerTeam * 2
+          })`,
+        }
+      )
+      .setColor(0x00ff00)
+      .setTimestamp();
+
+    const announce = await interaction.editReply({
+      embeds: [embed],
       fetchReply: true,
+      allowedMentions: { parse: ["users"] },
     });
+
     await announce.react("👍");
 
     // Pass all three flags (mapOption, selfSelect, playersPerTeam, roundsPerMap) into setupSessionCollector
