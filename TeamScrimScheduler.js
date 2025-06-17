@@ -768,7 +768,7 @@ client.on("interactionCreate", async (interaction) => {
       `Creating session with mapOption: ${mapOption}, selfSelect: ${selfSelect}, roundsPerMap: ${roundsPerMap}, playersPerTeam: ${playersPerTeam}`
     );
 
-    await interaction.reply({ ephemeral: false });
+    await interaction.deferReply();
 
     const mapName = getMapNameFromUrl(mapOption);
 
