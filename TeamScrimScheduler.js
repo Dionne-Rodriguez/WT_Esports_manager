@@ -6,7 +6,6 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
-  inlineCode,
 } from "discord.js";
 import moment from "moment";
 import dotenv from "dotenv";
@@ -28,7 +27,7 @@ const app = express();
 app.get("/", (req, res) => res.send("Hello World! 🌍"));
 app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
-const testing = true; // Set to false for production
+const testing = process.env.TESTING; // Set to false for production
 
 const client = new Client({
   intents: [

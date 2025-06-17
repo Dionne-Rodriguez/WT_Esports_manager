@@ -103,7 +103,7 @@ export default function registerRoutes(
     }
   });
 
-  app.post("/lobby-stale", express.json(), async (req, res) => {
+  app.post("/lobby-stale", async (req, res) => {
     try {
       const { roomId } = req.body;
       if (!roomId) {
