@@ -15,7 +15,7 @@ export async function postLobbyStartedEmbedMessage(client, roomId) {
     .setTitle("Lobby Started")
     .setDescription(null)
     .addFields(
-      { name: "Room ID", value: `${roomId}`, inline: true },
+      // { name: "Room ID", value: `${roomId}`, inline: true },
       {
         name: "Started At",
         value: moment.utc().format("YYYY-MM-DD hh:mm A"),

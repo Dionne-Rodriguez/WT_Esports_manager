@@ -46,6 +46,9 @@ client.on("error", (error) => {
 const token = process.env.TOKEN;
 const channelId = testing ? process.env.TEST_CHANNELID : process.env.CHANNELID;
 const voiceChannelId = process.env.VOICECHANNELID;
+const sessionChannelId = testing
+  ? process.env.TEST_CHANNELID
+  : process.env.SESSION_CHANNEL_ID;
 
 let messageId = null;
 let eventCreated = {};
@@ -67,7 +70,6 @@ const commands = [
         .setDescription("Your War Thunder numeric user ID")
         .setRequired(true)
     ),
-
   new SlashCommandBuilder()
     .setName("session")
     .setDescription("Start a custom War Thunder lobby")
@@ -111,6 +113,9 @@ const commands = [
         .setRequired(true)
         .setAutocomplete(true)
     ),
+  new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("Show usage instructions for the bot"),
 ].map((command) => command.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(token);
@@ -133,7 +138,7 @@ const rest = new REST({ version: "10" }).setToken(token);
 
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  registerRoutes(app, client, postNewScrimInterest, channelId);
+  registerRoutes(app, client, postNewScrimInterest, sessionChannelId);
 
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
@@ -301,8 +306,7 @@ async function startReadyCheck(
         const embed = new EmbedBuilder()
           .setTitle("Session Created")
           .setDescription(
-            `** Lobby ID: ** ${res.lobbyId}\n` +
-              `** Map: ** ${mapName}\n` +
+            `** Map: ** ${mapName}\n` +
               `** Rounds per map: ** ${roundsPerMap}\n` +
               `** Players: ** ${players.length}`
           )
@@ -345,9 +349,24 @@ async function setupSessionCollector(
       try {
         await reaction.users.remove(user.id);
       } catch {}
+      const embed = new EmbedBuilder()
+        .setTitle("⚠️ War Thunder ID Required")
+        .setDescription(
+          `${user}, you need to register your War Thunder ID to join lobbies.\n\n` +
+            `1. Visit [Gaijin Profile](https://store.gaijin.net/user.php)\n` +
+            `2. Copy your numeric ID\n` +
+            `3. Use the command: \`/user id <your_id>\` to register`
+        )
+        .setColor(0xffcc00); // Yellow warning color
+
       await announceMessage.channel.send({
-        content: `${user}, please register your War Thunder ID via \`/user id <your_id>\` first.`,
+        embeds: [embed],
+        allowedMentions: { parse: ["users"] },
       });
+
+      // await announceMessage.channel.send({
+      //   content: `${user}, please register your War Thunder ID via \`/user id <your_id>\` first.`,
+      // });
       return;
     }
 
@@ -814,6 +833,40 @@ client.on("interactionCreate", async (interaction) => {
       playersPerTeam,
       roundsPerMap
     );
+  }
+  if (interaction.commandName === "help") {
+    const embed = new EmbedBuilder()
+      .setTitle("🤖 WT Esports Bot Help")
+      .setColor(0x3498db)
+      .setDescription(
+        "This bot supports two key features for organizing War Thunder scrims:"
+      )
+      .addFields(
+        {
+          name: "📅 Weekly Scrim Schedule",
+          value:
+            "Every Saturday at **12:00 UTC**, an interest check is posted in <#1365763729161195611> for the upcoming week.\n" +
+            "React with the number emoji for the days you're available (Mon–Thurs). If 8+ players react, a match is scheduled.",
+        },
+        {
+          name: "⚔️ /session Command",
+          value:
+            "Use this command at any time to create a spontaneous custom match session.\n" +
+            "Players react with 👍 to join. 1v1, 2v2, 4v4, 6v6 are options along with other parameters to make a War Thunder custom session.",
+        },
+        {
+          name: "⚠️ Important Notes",
+          value:
+            "- Only **one session** can run at a time.\n" +
+            "- You **must register your War Thunder ID** with `/user id <your_id>` beforehand.\n" +
+            "- Dedicated channel to use the sesssion command is <#1384608279975428156>",
+        }
+      )
+      .setFooter({
+        text: "Developed by Team Mythical Esports",
+      });
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 });
 
