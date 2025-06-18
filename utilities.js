@@ -5,7 +5,9 @@ import mapsByType from "./mapsByType.json" assert { type: "json" };
 
 dotenv.config();
 const testing = process.env.TESTING === "true";
-const channelId = testing ? process.env.TEST_CHANNELID : process.env.CHANNELID;
+const channelId = testing
+  ? process.env.TEST_CHANNELID
+  : process.env.SESSION_CHANNEL_ID;
 
 export async function postLobbyStartedEmbedMessage(client, roomId) {
   const channel = await client.channels.fetch(channelId);
