@@ -81,7 +81,7 @@ const commands = [
         )
         .setRequired(true)
     )
-    .addStringOption((opt) =>
+    .addIntegerOption((opt) =>
       opt
         .setName("rounds_per_map")
         .setDescription("Number of rounds played on each selected map")
