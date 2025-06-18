@@ -48,7 +48,6 @@ export async function createSession({
   selfSelectTeam,
   roundsPerMap = 1,
 }) {
-  roundsPerMap = 1;
   if (roundsPerMap < 1) {
     throw new Error("roundsPerMap must be at least 1");
   }
@@ -133,6 +132,13 @@ export async function handleLobbyEnded(endedLobbyId) {
   console.log(
     `🏁  Lobby ${endedLobbyId} ended. Completed ${nextIndex} of ${totalRounds}`
   );
+
+  //send a message to the Discord channel with the lobby ended info
+  // await postLobbyEndedEmbedMessage(
+  //   client,
+  //   players,
+  //   teamA,
+  //   teamB,
 
   // If we've played all maps in the sequence, clean up
   if (nextIndex >= sequence.length) {
