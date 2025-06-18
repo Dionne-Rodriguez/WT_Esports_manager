@@ -780,7 +780,7 @@ client.on("interactionCreate", async (interaction) => {
     const mapOption =
       interaction.options.getString("map_option") || "Default map";
     const selfSelect = interaction.options.getBoolean("self_select"); // true or false
-    const roundsPerMap = interaction.options.getString("rounds_per_map");
+    const roundsPerMap = interaction.options.getInteger("rounds_per_map");
     const playersPerTeam = interaction.options.getInteger("match_type");
 
     console.log(
