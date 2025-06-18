@@ -51,10 +51,12 @@ export async function postJoinedSessionEmbedMessage(
     console.error("❌ Cannot find Discord channel:", channelId);
     throw new Error(`Discord channel ${channelId} not found.`);
   }
+  console.log("user joined session id", user);
 
   await channel.send({
+    content: `<@${user.id}>`,
     embeds: [embed],
-    allowedMentions: { parse: ["users"] },
+    allowedMentions: { users: [user.id] },
   });
 }
 
