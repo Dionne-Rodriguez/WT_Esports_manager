@@ -42,8 +42,8 @@ export async function postJoinedSessionEmbedMessage(
 ) {
   const channel = await client.channels.fetch(channelId);
   const embed = new EmbedBuilder()
-    .setTitle(
-      `✅ ${user} has joined the session! (${participants.size}/${MIN_PLAYERS})`
+    .setDescription(
+      `✅ <@${user.id}> has joined the session! (${participants.size}/${MIN_PLAYERS})`
     )
     .setColor(0x00ff00);
 
@@ -54,9 +54,8 @@ export async function postJoinedSessionEmbedMessage(
   console.log("user joined session id", user);
 
   await channel.send({
-    content: `<@${user.id}>`,
     embeds: [embed],
-    allowedMentions: { users: [user.id] },
+    allowedMentions: { users: ["user"] },
   });
 }
 
@@ -66,4 +65,8 @@ export function getMapNameFromUrl(mapUrl) {
     if (match) return match.name;
   }
   return "Custom Map"; // fallback
+}
+
+export function createDiscordPlayerPings(players) {
+  return players.map((p) => `<@${p.id}>`).join(", ");
 }

@@ -17,6 +17,7 @@ import mapsByType from "./mapsByType.json" assert { type: "json" };
 import {
   postJoinedSessionEmbedMessage,
   getMapNameFromUrl,
+  createDiscordPlayerPings,
 } from "./utilities.js";
 
 // Now you can use mapsByType exactly the same way:
@@ -209,8 +210,12 @@ async function startReadyCheck(
         `** We need all ${players.length} players to react in order for invites to be sent out. **`
     )
     .setColor(0x00ff00);
-  const message = await channel.send({ embeds: [embed] });
-
+  const playerMentions = createDiscordPlayerPings(players);
+  const message = await channel.send({
+    embeds: [embed],
+    allowedMentions: { parse: ["users"] },
+    content: playerMentions,
+  });
   await message.react("👍");
 
   const readyCollector = message.createReactionCollector({
@@ -574,7 +579,13 @@ client.on("messageReactionAdd", async (reaction, user) => {
           )
           .setColor(0x00ff00);
 
-        await channel.send({ embeds: [embed] });
+        const playerMentions = createDiscordPlayerPings(nonBotUsers);
+
+        await channel.send({
+          embeds: [embed],
+          content: playerMentions,
+          allowedMentions: { parse: ["users"] },
+        });
 
         await scheduleReminder(eventMoment, emoji, reaction, channel, dayName);
 
@@ -631,7 +642,11 @@ client.on("messageReactionAdd", async (reaction, user) => {
           .setDescription(` ** Mixed Team Session: ** \n ${mentionableUsers}\n`)
           .setColor(0x00ff00);
 
-        await channel.send({ embeds: [embed] });
+        await channel.send({
+          embeds: [embed],
+          content: mentionableUsers,
+          allowedMentions: { parse: ["users"] },
+        });
 
         await scheduleReminder(eventMoment, emoji, reaction, channel, dayName);
 
@@ -714,10 +729,16 @@ client.on("messageReactionRemove", async (reaction, user) => {
           .setDescription(
             `${
               threshold - count
-            } player(s) required to recreate event. If interested, react to original post.`
+            } player required to recreate event. If interested, react to original post.`
           )
           .setColor("Red");
-        await channel.send({ embeds: [embed] });
+
+        const playerMentions = createDiscordPlayerPings(nonBotUsers);
+        await channel.send({
+          embeds: [embed],
+          content: playerMentions,
+          allowedMentions: { parse: ["users"] },
+        });
       }
     }
   } catch (error) {
