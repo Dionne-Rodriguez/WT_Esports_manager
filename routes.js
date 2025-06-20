@@ -1,23 +1,15 @@
 import express from "express";
-import moment from "moment";
-import { EmbedBuilder } from "discord.js";
-import { handleLobbyEnded } from "./sessionManager.js";
-import { postLobbyStartedEmbedMessage } from "./utilities.js";
+import { handleLobbyEnded, handleLobbyStarted } from "./sessionManager.js";
+import {
+  postLobbyStartedEmbedMessage,
+  postLobbyStaleEmbedMessage,
+} from "./utilities.js";
 
-export default function registerRoutes(
-  app,
-  client,
-  postNewScrimInterest,
-  channelId
-) {
+export default function registerRoutes(app, postNewScrimInterest) {
   app.use(express.json());
 
   app.get("/post-scrim-interest", async (req, res) => {
     try {
-      if (!client || !client.isReady()) {
-        console.error("❌ Client is not ready.");
-        return res.status(503).send("Client is not ready.");
-      }
       await postNewScrimInterest();
       console.log(
         "✅ Scrim interest posted successfully via api url:",
@@ -32,17 +24,11 @@ export default function registerRoutes(
 
   app.post("/lobby-started", async (req, res) => {
     try {
-      if (!client || !client.isReady()) {
-        console.error("❌ Discord client is not ready.");
-        return res.status(503).json({ error: "Discord client not ready." });
-      }
       const { roomId } = req.body;
 
       console.log(`Lobby event ${roomId}`);
 
-      await postLobbyStartedEmbedMessage(client, roomId);
-
-      console.log(`✅ Notified Discord about lobby ${roomId} starting.`);
+      await handleLobbyStarted(roomId);
 
       return res.status(200).json({ message: "Discord notified." });
     } catch (err) {
@@ -59,33 +45,10 @@ export default function registerRoutes(
           .status(400)
           .json({ success: false, error: "Missing lobbyId in request body" });
       }
-      console.log(`Lobby ended event ${roomId}`);
-      const embed = new EmbedBuilder()
-        .setTitle("Lobby Ended")
-        .addFields(
-          //{ name: "Room ID", value: `${roomId}`, inline: true },
-          {
-            name: "Ended At",
-            value: moment.utc().format("YYYY-MM-DD hh:mm A"),
-            inline: true,
-          }
-        )
-        .setColor(0x00ff00) // green accent
-        .setTimestamp(new Date());
-
-      const channel = await client.channels.fetch(channelId);
-      if (!channel || !channel.send) {
-        console.error("❌ Cannot find Discord channel:", channelId);
-        return res.status(500).json({ error: "Discord channel not found." });
-      }
-
-      await channel.send({ embeds: [embed] });
-      console.log(`✅ Notified Discord about lobby ${roomId} ending.`);
-
       console.log(`🔄  Handling lobby ended for roomId ${roomId}...`);
       await new Promise((res) => setTimeout(res, 2000));
       await handleLobbyEnded(roomId);
-
+      console.log(`✅ Notified Discord about lobby ${roomId} ending.`);
       return res.status(200).json({ message: "Discord notified." });
     } catch (err) {
       console.error("Error in /lobby-ended:", err);
@@ -96,8 +59,13 @@ export default function registerRoutes(
   });
 
   app.post("/lobby-stale", async (req, res) => {
+    console.log("Lobby stale event received");
     try {
-      return res.status(200);
+      await postLobbyStaleEmbedMessage();
+      return res.status(200).json({
+        success: true,
+        message: "Lobby stale event received successfully.",
+      });
     } catch (err) {
       console.error("Error in /lobby-stale:", err);
       return res

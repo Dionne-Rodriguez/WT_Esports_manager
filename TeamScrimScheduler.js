@@ -1,7 +1,5 @@
 import {
-  Client,
   Events,
-  GatewayIntentBits,
   EmbedBuilder,
   REST,
   Routes,
@@ -19,6 +17,7 @@ import {
   getMapNameFromUrl,
   createDiscordPlayerPings,
 } from "./utilities.js";
+import client from "./discordClient.js";
 
 // Now you can use mapsByType exactly the same way:
 
@@ -29,16 +28,6 @@ app.get("/", (req, res) => res.send("Hello World! 🌍"));
 app.listen(3000, () => console.log("🌐 Keep-alive server running."));
 
 const testing = process.env.TESTING === "true";
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildScheduledEvents,
-  ],
-});
 
 client.on("error", (error) => {
   console.error("🚨 Client Error:", error);
@@ -139,7 +128,7 @@ const rest = new REST({ version: "10" }).setToken(token);
 
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  registerRoutes(app, client, postNewScrimInterest, sessionChannelId);
+  registerRoutes(app, postNewScrimInterest);
 
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
@@ -890,8 +879,6 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 });
-
-client.login(token);
 
 async function scheduleReminder(
   eventMoment,

@@ -6,6 +6,10 @@ import {
   updateLobby,
 } from "./WTEsportsClient.js";
 import mapsByType from "./mapsByType.json" assert { type: "json" };
+import {
+  postLobbyEndedEmbedMessage,
+  postLobbyStartedEmbedMessage,
+} from "./utilities.js";
 
 /**
  * Active multi-round sessions:
@@ -134,11 +138,7 @@ export async function handleLobbyEnded(endedLobbyId) {
   );
 
   //send a message to the Discord channel with the lobby ended info
-  // await postLobbyEndedEmbedMessage(
-  //   client,
-  //   players,
-  //   teamA,
-  //   teamB,
+  await postLobbyEndedEmbedMessage(nextIndex, totalRounds, sequence);
 
   // If we've played all maps in the sequence, clean up
   if (nextIndex >= sequence.length) {
@@ -203,6 +203,28 @@ export async function handleLobbyEnded(endedLobbyId) {
     console.log(`❌  Session aborted; state cleared for ${endedLobbyId}.`);
     await closeLobby();
   }
+}
+
+export async function handleLobbyStarted(lobbyId) {
+  if (typeof lobbyId === "number") {
+    lobbyId = lobbyId.toString();
+  }
+
+  const session = activeSessions.get(lobbyId);
+  if (!session) {
+    console.warn(
+      `Received “lobby started callback for unknown lobbyId=${lobbyId}. Ignoring.`
+    );
+    return;
+  }
+
+  let { sequence, nextIndex } = session;
+
+  if (nextIndex === 1) {
+    nextIndex = 0; // first round starts at index 0
+  }
+
+  await postLobbyStartedEmbedMessage(sequence[nextIndex]);
 }
 
 // ------------------------------------------------------------------
