@@ -11,7 +11,7 @@ import cron from "node-cron";
 import express from "express";
 import registerRoutes from "./routes.js";
 import { createSession } from "./sessionManager.js";
-import mapsByType from "./mapsByType.json" assert { type: "json" };
+import mapsByType from "./mapsByType.json" with { type: "json" };
 import {
   postJoinedSessionEmbedMessage,
   getMapNameFromUrl,
@@ -294,7 +294,6 @@ async function startReadyCheck(
         selfSelectTeam,
         roundsPerMap,
       });
-      const offline = res.offlineInvites.length > 0;
       const mapName = getMapNameFromUrl(mapOption);
       if (res.lobbyId) {
         const embed = new EmbedBuilder()
@@ -304,12 +303,14 @@ async function startReadyCheck(
               `** Rounds per map: ** ${roundsPerMap}\n` +
               `** Players: ** ${players.length}`
           )
-          .setFields(
-            players.map((p) => ({
-              name: `${offline ? "Offline ❌" : "Invited ✅"}`,
-              value: `<@${p.id}>`,
-            }))
-          )
+            .setFields(
+                players.map((p) => ({
+                  name: res.offlineInvites.includes(Number(p.warId))
+                      ? "Offline ❌"
+                      : "Invited ✅",
+                  value: `<@${p.id}>`,
+                }))
+            )
           .setColor(0x00ff00);
         await channel.send({
           embeds: [embed],

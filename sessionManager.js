@@ -5,7 +5,7 @@ import {
   closeLobby,
   updateLobby,
 } from "./WTEsportsClient.js";
-import mapsByType from "./mapsByType.json" assert { type: "json" };
+import mapsByType from "./mapsByType.json" with { type: "json" };
 import {
   postLobbyEndedEmbedMessage,
   postLobbyStartedEmbedMessage,

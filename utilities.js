@@ -1,7 +1,7 @@
 import moment from "moment";
 import dotenv from "dotenv";
 import { EmbedBuilder } from "discord.js";
-import mapsByType from "./mapsByType.json" assert { type: "json" };
+import mapsByType from "./mapsByType.json" with { type: "json" };
 import client from "./discordClient.js";
 
 dotenv.config();
@@ -33,7 +33,7 @@ export async function postLobbyStartedEmbedMessage(currentMapUrl) {
   }
 
   await channel.send({ embeds: [embed] });
-  console.log(`✅ Notified Discord about lobby ${roomId} starting.`);
+ // console.log(`✅ Notified Discord about lobby ${roomId} starting.`);
 }
 
 export async function postLobbyEndedEmbedMessage(
@@ -59,9 +59,14 @@ export async function postLobbyEndedEmbedMessage(
   const embed = new EmbedBuilder()
     .setTitle("Match Ended")
     .setDescription(`Completed ${nextIndex} of ${totalRounds} rounds.`)
-    .addFields(nextMap() || {})
     .setColor(0x00ff00) // green accent
     .setTimestamp(new Date());
+
+  const mapField = nextMap();
+  if(mapField) {
+    embed.addFields(mapField);
+  }
+
 
   // Replace with your actual channel ID where you want to post
   if (!channel || !channel.send) {
