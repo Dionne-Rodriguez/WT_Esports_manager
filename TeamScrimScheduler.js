@@ -381,7 +381,7 @@ async function setupSessionCollector(
 
     console.log("eval", participants.size >= (testing ? 2 : MIN_PLAYERS));
     console.log(typeof participants.size, participants.size);
-    if (participants.size >= (testing ? 2 : MIN_PLAYERS)) {
+    if (participants.size >= (testing ? 1 : MIN_PLAYERS)) {
       console.log(
         `🔔 Enough players joined: ${participants.size}/${MIN_PLAYERS}`
       );
