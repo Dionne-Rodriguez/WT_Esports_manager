@@ -132,7 +132,7 @@ client.once(Events.ClientReady, async () => {
 
   if (testing) {
     console.log("Testing mode: posting scrim interest check once.");
-    await postNewScrimInterest();
+   // await postNewScrimInterest();
   } else {
     cron.schedule("0 12 * * 6", async () => {
       console.log("⏰ Scheduled task triggered.");

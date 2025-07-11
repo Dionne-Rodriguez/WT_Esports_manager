@@ -1,12 +1,36 @@
 import express from "express";
 import { handleLobbyEnded, handleLobbyStarted } from "./sessionManager.js";
+import cors from "cors";
 import {
   postLobbyStartedEmbedMessage,
   postLobbyStaleEmbedMessage,
 } from "./utilities.js";
+import jwt from "jsonwebtoken";
+
+const SECRET = process.env.ADMIN_JWT_SECRET || "changeme";
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "supremacy123";
 
 export default function registerRoutes(app, postNewScrimInterest) {
   app.use(express.json());
+  app.use(
+      cors({
+        origin: "*", // or "*" during dev
+        methods: ["GET","POST","OPTIONS"],
+        allowedHeaders: ["Content-Type","Authorization"]
+      })
+  );
+  app.post("/api/login", express.json(), (req, res) => {
+    console.log("Login request received");
+    const { username, password } = req.body;
+
+    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+      const token = jwt.sign({ username }, SECRET, { expiresIn: "4h" });
+      return res.json({ token });
+    }
+
+    return res.status(401).json({ error: "Invalid credentials" });
+  });
 
   app.get("/post-scrim-interest", async (req, res) => {
     try {
@@ -21,6 +45,10 @@ export default function registerRoutes(app, postNewScrimInterest) {
       res.status(500).send("Failed to post scrim interest.");
     }
   });
+
+  app.get("/admin", async (req, res) => {
+    res.send("Admin page");
+  })
 
   app.post("/lobby-started", async (req, res) => {
     try {
